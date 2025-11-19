@@ -14,6 +14,60 @@ if (!defined("WHMCS")) {
 use WHMCS\Database\Capsule;
 
 /**
+ * تابع دریافت پیام خطا بر اساس کد
+ *
+ * @param string $errorCode کد خطا
+ * @return string پیام خطا
+ */
+function behpardakht_get_error_message($errorCode) {
+    $errors = [
+        '11' => 'شماره کارت نامعتبر است',
+        '12' => 'موجودی کافی نیست',
+        '13' => 'رمز نادرست است',
+        '14' => 'تعداد دفعات وارد کردن رمز بیش از حد مجاز است',
+        '15' => 'کارت نامعتبر است',
+        '16' => 'دفعات برداشت وجه بیش از حد مجاز است',
+        '17' => 'کاربر از انجام تراکنش منصرف شده است',
+        '18' => 'تاریخ انقضای کارت گذشته است',
+        '19' => 'مبلغ برداشت وجه بیش از حد مجاز است',
+        '21' => 'پذیرنده نامعتبر است',
+        '22' => 'خطای امنیتی رخ داده است',
+        '23' => 'مشکل در پایگاه داده',
+        '24' => 'اطلاعات کاربری پذیرنده نادرست است',
+        '25' => 'مبلغ نامعتبر است',
+        '31' => 'پاسخ نامعتبر است',
+        '32' => 'فرمت اطلاعات وارد شده صحیح نیست',
+        '33' => 'حساب نامعتبر است',
+        '34' => 'خطای سیستمی',
+        '35' => 'تاریخ نامعتبر است',
+        '41' => 'شماره درخواست تکراری است',
+        '42' => 'تراکنش Sale یافت نشد',
+        '43' => 'قبلا درخواست Verify داده شده است',
+        '44' => 'درخواست Verify یافت نشد',
+        '45' => 'تراکنش Settle شده است',
+        '46' => 'تراکنش Settle نشده است',
+        '47' => 'تراکنش Settle یافت نشد',
+        '48' => 'تراکنش Reverse شده است',
+        '51' => 'تراکنش تکراری است',
+        '54' => 'تراکنش مرجع موجود نیست',
+        '55' => 'تراکنش نامعتبر است',
+        '61' => 'خطا در واریز',
+        '111' => 'صادر کننده کارت نامعتبر است',
+        '112' => 'خطای سوییچ صادر کننده کارت',
+        '113' => 'پاسخی از صادر کننده کارت دریافت نشد',
+        '114' => 'دارنده کارت مجاز به انجام این تراکنش نیست',
+        '415' => 'زمان جلسه کاری به پایان رسیده است',
+        '416' => 'خطا در ثبت اطلاعات',
+        '417' => 'شناسه پرداخت کننده نامعتبر است',
+        '418' => 'اشکال در تعریف اطلاعات مشتری',
+        '419' => 'تعداد دفعات ورود اطلاعات از حد مجاز گذشته است',
+        '421' => 'IP نامعتبر است',
+    ];
+
+    return isset($errors[$errorCode]) ? $errors[$errorCode] : 'خطای نامشخص (کد: ' . $errorCode . ')';
+}
+
+/**
  * پیکربندی ماژول
  */
 function behpardakht_transactions_config() {
@@ -169,14 +223,20 @@ function behpardakht_transactions_output($vars) {
 
     $clientsInfo = behpardakht_get_clients_info(array_unique($invoiceIds));
 
-    // اضافه کردن اطلاعات مشتری به تراکنش‌ها
+    // اضافه کردن اطلاعات مشتری و خطا به تراکنش‌ها
     foreach ($transactions as &$transaction) {
+        // اطلاعات مشتری
         if (isset($clientsInfo[$transaction->invoice_id])) {
             $transaction->client_id = $clientsInfo[$transaction->invoice_id]['client_id'];
             $transaction->client_name = $clientsInfo[$transaction->invoice_id]['client_name'];
         } else {
             $transaction->client_id = 0;
             $transaction->client_name = 'نامشخص';
+        }
+
+        // پیام خطا
+        if (!empty($transaction->error_code)) {
+            $transaction->error_message = behpardakht_get_error_message($transaction->error_code);
         }
     }
 
@@ -359,101 +419,15 @@ function behpardakht_export_excel() {
  * Sidebar Output
  */
 function behpardakht_transactions_sidebar($vars) {
-    // دریافت آمار
-    try {
-        $totalTransactions = Capsule::table('mod_behpardakht_transactions')->count();
-        $completedCount = Capsule::table('mod_behpardakht_transactions')->where('status', 'completed')->count();
-        $pendingCount = Capsule::table('mod_behpardakht_transactions')->where('status', 'pending')->count();
-        $failedCount = Capsule::table('mod_behpardakht_transactions')->where('status', 'failed')->count();
-
-        $totalAmount = Capsule::table('mod_behpardakht_transactions')
-            ->where('status', 'completed')
-            ->sum('amount_rial');
-
-        $totalAmountToman = $totalAmount ? number_format($totalAmount / 10, 0, '', ',') : '0';
-
-    } catch (Exception $e) {
-        $totalTransactions = $completedCount = $pendingCount = $failedCount = 0;
-        $totalAmountToman = '0';
-    }
-
     $sidebarHtml = '
     <div class="panel panel-default" style="margin-top: 0;">
-        <div class="panel-heading">
-            <h3 class="panel-title">
-                <i class="fas fa-chart-bar"></i> آمار تراکنش‌ها
-            </h3>
-        </div>
-        <div class="panel-body">
-            <div class="list-group" style="margin-bottom: 0;">
-                <div class="list-group-item">
-                    <span class="badge badge-default">' . number_format($totalTransactions) . '</span>
-                    <i class="fas fa-list"></i> کل تراکنش‌ها
-                </div>
-                <div class="list-group-item">
-                    <span class="badge badge-success">' . number_format($completedCount) . '</span>
-                    <i class="fas fa-check-circle"></i> تراکنش‌های موفق
-                </div>
-                <div class="list-group-item">
-                    <span class="badge badge-warning">' . number_format($pendingCount) . '</span>
-                    <i class="fas fa-clock"></i> در انتظار
-                </div>
-                <div class="list-group-item">
-                    <span class="badge badge-danger">' . number_format($failedCount) . '</span>
-                    <i class="fas fa-times-circle"></i> ناموفق
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <div class="panel panel-default">
-        <div class="panel-heading">
-            <h3 class="panel-title">
-                <i class="fas fa-money-bill-wave"></i> مجموع درآمد
-            </h3>
-        </div>
         <div class="panel-body text-center">
-            <h3 style="color: #ff6600; margin: 10px 0;">
-                <strong>' . $totalAmountToman . '</strong>
-                <small style="display: block; font-size: 14px; color: #6b7280; margin-top: 5px;">تومان</small>
-            </h3>
-            <small class="text-muted">از تراکنش‌های موفق</small>
-        </div>
-    </div>
-
-    <div class="panel panel-default">
-        <div class="panel-heading">
-            <h3 class="panel-title">
-                <i class="fas fa-info-circle"></i> راهنمای سریع
-            </h3>
-        </div>
-        <div class="panel-body">
-            <ul class="list-unstyled" style="margin: 0;">
-                <li style="margin-bottom: 8px;">
-                    <i class="fas fa-search text-primary"></i>
-                    <small>جستجو بر اساس فاکتور، سفارش یا تراکنش</small>
-                </li>
-                <li style="margin-bottom: 8px;">
-                    <i class="fas fa-filter text-primary"></i>
-                    <small>فیلتر بر اساس وضعیت و تاریخ</small>
-                </li>
-                <li style="margin-bottom: 8px;">
-                    <i class="fas fa-file-excel text-success"></i>
-                    <small>دریافت خروجی اکسل از تراکنش‌ها</small>
-                </li>
-                <li>
-                    <i class="fas fa-sort text-primary"></i>
-                    <small>مرتب‌سازی بر اساس ستون‌های جدول</small>
-                </li>
-            </ul>
-        </div>
-    </div>
-
-    <div class="panel panel-default">
-        <div class="panel-body text-center">
-            <small class="text-muted">
-                نسخه 2.0 | بهپرداخت ملت
-            </small>
+            <p style="margin: 0; color: #5f6368; font-size: 13px;">
+                افزونه مدیریت تراکنش‌های بهپرداخت ملت
+            </p>
+            <p style="margin: 8px 0 0 0; color: #9ca3af; font-size: 12px;">
+                نسخه 2.0
+            </p>
         </div>
     </div>';
 
