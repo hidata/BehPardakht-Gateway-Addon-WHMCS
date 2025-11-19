@@ -21,7 +21,7 @@
                         <label>جستجو</label>
                         <input type="text" name="search" class="form-control"
                                value="{$search}"
-                               placeholder="شماره فاکتور، سفارش یا تراکنش">
+                               placeholder="شماره فاکتور، سفارش، تراکنش یا کارت">
                     </div>
                 </div>
 
@@ -104,6 +104,7 @@
                                 مبلغ {if $sort eq 'amount_rial'}<i class="fas fa-sort-{if $order eq 'asc'}up{else}down{/if}"></i>{/if}
                             </a>
                         </th>
+                        <th>شماره کارت</th>
                         <th>
                             <a href="{$modulelink}&sort=status&order={if $sort eq 'status' && $order eq 'desc'}asc{else}desc{/if}&search={$search|escape:'url'}&status={$status_filter|escape:'url'}&date_from={$date_from|escape:'url'}&date_to={$date_to|escape:'url'}">
                                 وضعیت {if $sort eq 'status'}<i class="fas fa-sort-{if $order eq 'asc'}up{else}down{/if}"></i>{/if}
@@ -173,6 +174,16 @@
                                 </td>
 
                                 <td>
+                                    {if $transaction->card_holder_pan}
+                                        <span class="bp-card-number">
+                                            {$transaction->card_holder_pan|substr:0:4} **** {$transaction->card_holder_pan|substr:-4}
+                                        </span>
+                                    {else}
+                                        <span style="color: #5f6368;">-</span>
+                                    {/if}
+                                </td>
+
+                                <td>
                                     {if $transaction->status eq 'completed'}
                                         <span class="bp-status bp-status-success">موفق</span>
                                     {elseif $transaction->status eq 'pending'}
@@ -215,7 +226,7 @@
                         {/foreach}
                     {else}
                         <tr>
-                            <td colspan="10">
+                            <td colspan="11">
                                 <div class="bp-no-data">
                                     <i class="fas fa-inbox"></i>
                                     <p>هیچ تراکنشی یافت نشد</p>

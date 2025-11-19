@@ -184,7 +184,8 @@ function behpardakht_transactions_output($vars) {
         $query->where(function($q) use ($search) {
             $q->where('invoice_id', 'LIKE', '%' . $search . '%')
               ->orWhere('order_id', 'LIKE', '%' . $search . '%')
-              ->orWhere('ref_id', 'LIKE', '%' . $search . '%');
+              ->orWhere('ref_id', 'LIKE', '%' . $search . '%')
+              ->orWhere('card_holder_pan', 'LIKE', '%' . $search . '%');
         });
     }
 
@@ -295,7 +296,8 @@ function behpardakht_export_excel() {
         $query->where(function($q) use ($search) {
             $q->where('invoice_id', 'LIKE', '%' . $search . '%')
               ->orWhere('order_id', 'LIKE', '%' . $search . '%')
-              ->orWhere('ref_id', 'LIKE', '%' . $search . '%');
+              ->orWhere('ref_id', 'LIKE', '%' . $search . '%')
+              ->orWhere('card_holder_pan', 'LIKE', '%' . $search . '%');
         });
     }
 
@@ -380,6 +382,7 @@ function behpardakht_export_excel() {
                 <th>شماره تراکنش</th>
                 <th>مبلغ (ریال)</th>
                 <th>مبلغ (تومان)</th>
+                <th>شماره کارت</th>
                 <th>وضعیت</th>
                 <th>تاریخ ایجاد</th>
             </tr>
@@ -396,6 +399,10 @@ function behpardakht_export_excel() {
         $status = isset($statusLabels[$t->status]) ? $statusLabels[$t->status] : $t->status;
         $amountToman = $t->amount_rial / 10;
 
+        $cardNumber = $t->card_holder_pan
+            ? substr($t->card_holder_pan, 0, 4) . ' **** ' . substr($t->card_holder_pan, -4)
+            : '-';
+
         echo '<tr>
             <td class="number">' . htmlspecialchars($t->id, ENT_QUOTES, 'UTF-8') . '</td>
             <td>' . htmlspecialchars($t->client_name, ENT_QUOTES, 'UTF-8') . '</td>
@@ -404,6 +411,7 @@ function behpardakht_export_excel() {
             <td>' . htmlspecialchars($t->ref_id ?: '-', ENT_QUOTES, 'UTF-8') . '</td>
             <td class="number">' . number_format($t->amount_rial, 0, '', '') . '</td>
             <td class="number">' . number_format($amountToman, 0, '', '') . '</td>
+            <td>' . htmlspecialchars($cardNumber, ENT_QUOTES, 'UTF-8') . '</td>
             <td>' . htmlspecialchars($status, ENT_QUOTES, 'UTF-8') . '</td>
             <td>' . htmlspecialchars($t->created_at, ENT_QUOTES, 'UTF-8') . '</td>
         </tr>';

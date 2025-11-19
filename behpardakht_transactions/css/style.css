@@ -280,6 +280,18 @@
     color: var(--text);
 }
 
+/* Card Number */
+.bp-card-number {
+    display: inline-block;
+    background: var(--bg-secondary);
+    color: var(--text);
+    padding: 4px 10px;
+    border-radius: 4px;
+    font-size: 12px;
+    direction: ltr;
+    unicode-bidi: isolate;
+}
+
 /* Status Badge */
 .bp-status {
     display: inline-flex;
