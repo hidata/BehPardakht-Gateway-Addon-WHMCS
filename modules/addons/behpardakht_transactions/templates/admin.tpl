@@ -8,31 +8,32 @@
 {if $sort eq 'status'}{assign var="sortLabel" value="وضعیت"}{/if}
 
 <div class="bp-admin">
-    <div class="bp-hero">
-        <div class="bp-hero__content">
+    <section class="bp-hero">
+        <div class="bp-hero__grid">
             <div class="bp-hero__text">
-                <p class="bp-kicker">به‌پرداخت ملت</p>
-                <h1>داشبورد مدیریت تراکنش‌ها</h1>
-                <p class="bp-lead">پایش، جستجو و بررسی سریع تراکنش‌های درگاه بانکی با طراحی ساده و مدرن.</p>
+                <p class="bp-kicker">مدیریت تراکنش به‌پرداخت ملت</p>
+                <h1>کنترل کامل تراکنش‌ها</h1>
+                <p class="bp-lead">پایش و مدیریت تراکنش‌های بانکی با چیدمان تازه، تمرکز روی داده‌های کلیدی و تجربه تجاری.</p>
                 <div class="bp-chip-group">
-                    <span class="bp-chip"><i class="fas fa-database"></i> {$total|number_format} تراکنش ثبت‌شده</span>
+                    <span class="bp-chip"><i class="fas fa-database"></i> {$total|number_format} تراکنش</span>
                     <span class="bp-chip bp-chip--soft"><i class="fas fa-layer-group"></i> صفحه {$page} از {$totalPages}</span>
+                    <span class="bp-chip bp-chip--ghost"><i class="fas fa-sort-amount-down-alt"></i> مرتب‌سازی: {$sortLabel}</span>
                 </div>
             </div>
-            <div class="bp-hero__metrics">
-                <div class="bp-metric">
-                    <span class="bp-metric__label">تعداد کل</span>
-                    <span class="bp-metric__value">{$total|number_format}</span>
-                    <span class="bp-metric__hint">همه تراکنش‌ها</span>
+            <div class="bp-hero__stats">
+                <div class="bp-stat">
+                    <div class="bp-stat__label">تراکنش‌های این صفحه</div>
+                    <div class="bp-stat__value">{$pageCount}</div>
+                    <div class="bp-stat__hint">فیلترها و مرتب‌سازی فعلی</div>
                 </div>
-                <div class="bp-metric">
-                    <span class="bp-metric__label">تراکنش‌های این صفحه</span>
-                    <span class="bp-metric__value">{$pageCount}</span>
-                    <span class="bp-metric__hint">مرتب‌سازی بر اساس {$sortLabel}</span>
+                <div class="bp-stat">
+                    <div class="bp-stat__label">تراکنش‌های ثبت‌شده</div>
+                    <div class="bp-stat__value">{$total|number_format}</div>
+                    <div class="bp-stat__hint">نمای کلی از کل سوابق</div>
                 </div>
             </div>
         </div>
-    </div>
+    </section>
 
     <div class="bp-card bp-card--filters">
         <div class="bp-card__header">
@@ -88,7 +89,7 @@
             <div>
                 <p class="bp-kicker">گزارش تراکنش</p>
                 <h2>لیست تراکنش‌ها</h2>
-                <p class="bp-muted">اطلاعات کلیدی هر تراکنش به همراه دسترسی سریع به فاکتور و جزئیات.</p>
+                <p class="bp-muted">نمایش فاکتور، شناسه سفارش، وضعیت و تاریخ با دسترسی سریع به جزئیات.</p>
             </div>
             <div class="bp-chip bp-chip--ghost">
                 <i class="fas fa-info-circle"></i>

@@ -5,17 +5,19 @@
  */
 
 :root {
-    --bp-primary: #ff6a3d;
-    --bp-primary-strong: #e55628;
-    --bp-success: #16a34a;
+    --bp-primary: #d72c27;
+    --bp-primary-strong: #b3211d;
+    --bp-accent: #f5b301;
+    --bp-success: #22c55e;
     --bp-warning: #f59e0b;
     --bp-danger: #ef4444;
     --bp-surface: #ffffff;
-    --bp-border: #e5e7eb;
-    --bp-muted: #6b7280;
-    --bp-text: #0f172a;
-    --bp-bg: #f8fafc;
-    --bp-shadow: 0 12px 30px -12px rgba(15, 23, 42, 0.25);
+    --bp-surface-alt: #faf5f6;
+    --bp-border: #ead7dc;
+    --bp-muted: #56505f;
+    --bp-text: #1a0f1c;
+    --bp-bg: #f7f2f4;
+    --bp-shadow: 0 16px 40px -18px rgba(152, 0, 11, 0.35);
 }
 
 *,
@@ -32,6 +34,8 @@
     display: flex;
     flex-direction: column;
     gap: 20px;
+    background: linear-gradient(180deg, rgba(215, 44, 39, 0.05), rgba(255, 255, 255, 0));
+    padding: 6px;
 }
 
 .bp-kicker {
@@ -42,20 +46,20 @@
     margin: 0 0 6px;
 }
 
+
 .bp-hero {
-    background: linear-gradient(125deg, rgba(255, 106, 61, 0.1), rgba(255, 106, 61, 0.03));
+    background: linear-gradient(120deg, rgba(215, 44, 39, 0.08), rgba(245, 179, 1, 0.12));
     border: 1px solid var(--bp-border);
     border-radius: 18px;
     padding: 26px;
     box-shadow: var(--bp-shadow);
 }
 
-.bp-hero__content {
-    display: flex;
-    flex-wrap: wrap;
+.bp-hero__grid {
+    display: grid;
+    grid-template-columns: 1.4fr 1fr;
     gap: 20px;
-    align-items: center;
-    justify-content: space-between;
+    align-items: stretch;
 }
 
 .bp-hero__text h1 {
@@ -69,6 +73,7 @@
     color: var(--bp-muted);
     line-height: 1.7;
 }
+
 
 .bp-chip-group {
     display: flex;
@@ -88,9 +93,10 @@
     font-weight: 600;
 }
 
+
 .bp-chip--soft {
-    background: rgba(255, 106, 61, 0.08);
-    border-color: rgba(255, 106, 61, 0.2);
+    background: rgba(215, 44, 39, 0.1);
+    border-color: rgba(215, 44, 39, 0.2);
 }
 
 .bp-chip--ghost {
@@ -98,43 +104,45 @@
     border-style: solid;
 }
 
+
 .bp-chip i {
     color: var(--bp-primary);
 }
 
-.bp-hero__metrics {
+.bp-hero__stats {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
     gap: 12px;
-    flex: 1;
 }
 
-.bp-metric {
+.bp-stat {
     background: var(--bp-surface);
     border: 1px solid var(--bp-border);
-    padding: 14px;
+    padding: 16px;
     border-radius: 14px;
     box-shadow: var(--bp-shadow);
 }
 
-.bp-metric__label {
+.bp-stat__label {
     display: block;
     color: var(--bp-muted);
     font-size: 13px;
     margin-bottom: 6px;
 }
 
-.bp-metric__value {
+.bp-stat__value {
     display: block;
-    font-weight: 800;
-    font-size: 22px;
+    font-weight: 900;
+    font-size: 24px;
     margin-bottom: 6px;
+    color: var(--bp-primary);
 }
 
-.bp-metric__hint {
+.bp-stat__hint {
     color: var(--bp-muted);
     font-size: 12px;
 }
+
 
 .bp-card {
     background: var(--bp-surface);
@@ -248,7 +256,7 @@
 .bp-field select:focus {
     outline: none;
     border-color: var(--bp-primary);
-    box-shadow: 0 0 0 3px rgba(255, 106, 61, 0.18);
+    box-shadow: 0 0 0 3px rgba(215, 44, 39, 0.18);
     background: #fff;
 }
 
@@ -261,11 +269,14 @@
     padding: 16px;
 }
 
+
 .bp-table__wrap {
     overflow-x: auto;
     border-radius: 12px;
     border: 1px solid var(--bp-border);
+    background: var(--bp-surface);
 }
+
 
 .bp-table {
     width: 100%;
@@ -282,7 +293,7 @@
 }
 
 .bp-table th {
-    background: var(--bp-bg);
+    background: var(--bp-surface-alt);
     font-weight: 800;
 }
 
@@ -306,7 +317,7 @@
 
 .bp-sortable::after {
     content: '\\f0dc';
-    font-family: "Font Awesome 5 Free"; /* آیکن داخلی فریمورک مدیریت */
+    font-family: "Font Awesome 5 Free";
     font-weight: 900;
     font-size: 11px;
     color: var(--bp-muted);
@@ -327,16 +338,17 @@
     color: var(--bp-primary);
 }
 
+
 .bp-row:hover {
-    background: rgba(255, 106, 61, 0.03);
+    background: rgba(215, 44, 39, 0.03);
 }
 
 .bp-row--completed {
-    background: rgba(22, 163, 74, 0.04);
+    background: rgba(34, 197, 94, 0.05);
 }
 
 .bp-row--failed {
-    background: rgba(239, 68, 68, 0.04);
+    background: rgba(239, 68, 68, 0.05);
 }
 
 .bp-pill {
@@ -573,9 +585,8 @@
 }
 
 @media (max-width: 992px) {
-    .bp-hero__content {
-        flex-direction: column;
-        align-items: flex-start;
+    .bp-hero__grid {
+        grid-template-columns: 1fr;
     }
 
     .bp-card__header {
