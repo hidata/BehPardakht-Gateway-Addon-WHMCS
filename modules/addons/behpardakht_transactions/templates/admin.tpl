@@ -47,7 +47,9 @@
             </div>
         </div>
 
-        <form method="GET" action="{$modulelink}" class="bp-filters">
+        <form method="GET" action="{$modulelink}" class="bp-filters" id="bp-filter-form">
+            <input type="hidden" name="module" value="behpardakht_transactions">
+
             <label class="bp-field">
                 <span class="bp-field__label"><i class="fas fa-search"></i> جستجوی سریع</span>
                 <input type="text" name="search" value="{$search}" placeholder="شماره فاکتور، شماره درخواست یا شماره تراکنش">
@@ -74,7 +76,12 @@
             </label>
 
             <div class="bp-filters__submit">
-                <button type="submit" class="bp-btn bp-btn--primary"><i class="fas fa-search"></i> اعمال فیلتر</button>
+                <button type="submit"
+                        class="bp-btn bp-btn--primary"
+                        formaction="{$modulelink}"
+                        formmethod="get">
+                    <i class="fas fa-search"></i> اعمال فیلتر
+                </button>
             </div>
         </form>
     </div>
