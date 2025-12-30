@@ -317,7 +317,7 @@
 
 .bp-sortable::after {
     content: '\\f0dc';
-    font-family: "Font Awesome 5 Free";
+    font-family: "Font Awesome 5 Pro", "Font Awesome 5 Free";
     font-weight: 900;
     font-size: 11px;
     color: var(--bp-muted);

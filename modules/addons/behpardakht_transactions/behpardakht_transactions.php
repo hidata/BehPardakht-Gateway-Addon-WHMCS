@@ -91,6 +91,51 @@ function behpardakht_get_clients_info($invoiceIds) {
 }
 
 /**
+ * ساخت کوئری مشترک با اعمال فیلترهای جستجو و تاریخ
+ *
+ * @param string $search
+ * @param string $status_filter
+ * @param string $date_from
+ * @param string $date_to
+ * @return \Illuminate\Database\Query\Builder
+ */
+function behpardakht_build_filtered_query($search, $status_filter, $date_from, $date_to) {
+    $query = Capsule::table('mod_behpardakht_transactions');
+
+    if ($search !== '') {
+        $searchTerm = trim($search);
+        $likeTerm = '%' . $searchTerm . '%';
+        $compactDigits = preg_replace('/\D+/', '', $searchTerm);
+
+        $query->where(function($q) use ($likeTerm, $compactDigits) {
+            $q->where('invoice_id', 'LIKE', $likeTerm)
+              ->orWhere('order_id', 'LIKE', $likeTerm)
+              ->orWhere('sale_reference_id', 'LIKE', $likeTerm)
+              ->orWhere('ref_id', 'LIKE', $likeTerm);
+
+            if ($compactDigits) {
+                $q->orWhere('sale_reference_id', 'LIKE', '%' . $compactDigits . '%');
+            }
+        });
+    }
+
+    $allowedStatuses = ['pending', 'completed', 'failed'];
+    if ($status_filter && in_array($status_filter, $allowedStatuses)) {
+        $query->where('status', $status_filter);
+    }
+
+    if ($date_from && preg_match('/^\d{4}-\d{2}-\d{2}$/', $date_from)) {
+        $query->where('created_at', '>=', $date_from . ' 00:00:00');
+    }
+
+    if ($date_to && preg_match('/^\d{4}-\d{2}-\d{2}$/', $date_to)) {
+        $query->where('created_at', '<=', $date_to . ' 23:59:59');
+    }
+
+    return $query;
+}
+
+/**
  * خروجی صفحه اصلی ماژول
  */
 function behpardakht_transactions_output($vars) {
@@ -122,39 +167,16 @@ function behpardakht_transactions_output($vars) {
         $sort = 'created_at';
     }
 
-    // ساخت کوئری اصلی
-    $query = Capsule::table('mod_behpardakht_transactions');
-
-    // اعمال فیلترها با استفاده از Prepared Statements (ایمن در برابر SQL Injection)
-    if ($search) {
-        $query->where(function($q) use ($search) {
-            $q->where('invoice_id', 'LIKE', '%' . $search . '%')
-              ->orWhere('order_id', 'LIKE', '%' . $search . '%')
-              ->orWhere('ref_id', 'LIKE', '%' . $search . '%');
-        });
-    }
-
-    // فیلتر وضعیت (Whitelist approach)
-    $allowedStatuses = ['pending', 'completed', 'failed'];
-    if ($status_filter && in_array($status_filter, $allowedStatuses)) {
-        $query->where('status', $status_filter);
-    }
-
-    // فیلتر تاریخ
-    if ($date_from && preg_match('/^\d{4}-\d{2}-\d{2}$/', $date_from)) {
-        $query->where('created_at', '>=', $date_from . ' 00:00:00');
-    }
-
-    if ($date_to && preg_match('/^\d{4}-\d{2}-\d{2}$/', $date_to)) {
-        $query->where('created_at', '<=', $date_to . ' 23:59:59');
-    }
+    // ساخت کوئری اصلی با فیلترهای مشترک
+    $query = behpardakht_build_filtered_query($search, $status_filter, $date_from, $date_to);
+    $listQuery = clone $query;
 
     // شمارش کل رکوردها
     $total = $query->count();
     $totalPages = $total > 0 ? ceil($total / $limit) : 1;
 
     // دریافت رکوردها با مرتب‌سازی
-    $transactions = $query->orderBy($sort, $order)
+    $transactions = $listQuery->orderBy($sort, $order)
                           ->offset($offset)
                           ->limit($limit)
                           ->get();
@@ -227,30 +249,8 @@ function behpardakht_export_excel() {
     $date_from = isset($_GET['date_from']) ? trim($_GET['date_from']) : '';
     $date_to = isset($_GET['date_to']) ? trim($_GET['date_to']) : '';
 
-    // ساخت کوئری
-    $query = Capsule::table('mod_behpardakht_transactions');
-
-    // اعمال فیلترها
-    if ($search) {
-        $query->where(function($q) use ($search) {
-            $q->where('invoice_id', 'LIKE', '%' . $search . '%')
-              ->orWhere('order_id', 'LIKE', '%' . $search . '%')
-              ->orWhere('ref_id', 'LIKE', '%' . $search . '%');
-        });
-    }
-
-    $allowedStatuses = ['pending', 'completed', 'failed'];
-    if ($status_filter && in_array($status_filter, $allowedStatuses)) {
-        $query->where('status', $status_filter);
-    }
-
-    if ($date_from && preg_match('/^\d{4}-\d{2}-\d{2}$/', $date_from)) {
-        $query->where('created_at', '>=', $date_from . ' 00:00:00');
-    }
-
-    if ($date_to && preg_match('/^\d{4}-\d{2}-\d{2}$/', $date_to)) {
-        $query->where('created_at', '<=', $date_to . ' 23:59:59');
-    }
+    // ساخت کوئری با فیلترهای مشترک
+    $query = behpardakht_build_filtered_query($search, $status_filter, $date_from, $date_to);
 
     $transactions = $query->orderBy('created_at', 'desc')
                           ->limit(10000) // محدودیت برای جلوگیری از مصرف زیاد حافظه
@@ -316,7 +316,7 @@ function behpardakht_export_excel() {
                 <th>شناسه</th>
                 <th>نام مشتری</th>
                 <th>شماره فاکتور</th>
-                <th>شماره سفارش</th>
+                <th>شماره درخواست</th>
                 <th>شماره تراکنش</th>
                 <th>مبلغ (ریال)</th>
                 <th>مبلغ (تومان)</th>
@@ -341,7 +341,7 @@ function behpardakht_export_excel() {
             <td>' . htmlspecialchars($t->client_name, ENT_QUOTES, 'UTF-8') . '</td>
             <td class="number">' . htmlspecialchars($t->invoice_id, ENT_QUOTES, 'UTF-8') . '</td>
             <td class="number">' . htmlspecialchars($t->order_id, ENT_QUOTES, 'UTF-8') . '</td>
-            <td>' . htmlspecialchars($t->ref_id ?: '-', ENT_QUOTES, 'UTF-8') . '</td>
+            <td>' . htmlspecialchars($t->sale_reference_id ?: '-', ENT_QUOTES, 'UTF-8') . '</td>
             <td class="number">' . number_format($t->amount_rial, 0, '', '') . '</td>
             <td class="number">' . number_format($amountToman, 0, '', '') . '</td>
             <td>' . htmlspecialchars($status, ENT_QUOTES, 'UTF-8') . '</td>
@@ -373,7 +373,7 @@ function behpardakht_transactions_sidebar($vars) {
             <ul class="list-unstyled" style="margin: 0;">
                 <li style="margin-bottom: 8px;">
                     <i class="fas fa-search text-primary"></i>
-                    <small>جستجو با شماره فاکتور، سفارش یا شناسه تراکنش</small>
+                    <small>جستجو با شماره فاکتور، شماره درخواست یا شماره تراکنش</small>
                 </li>
                 <li style="margin-bottom: 8px;">
                     <i class="fas fa-filter text-primary"></i>

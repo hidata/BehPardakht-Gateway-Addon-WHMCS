@@ -3,7 +3,7 @@
 {assign var="sortLabel" value="تاریخ ایجاد"}
 {if $sort eq 'id'}{assign var="sortLabel" value="شناسه"}{/if}
 {if $sort eq 'invoice_id'}{assign var="sortLabel" value="شماره فاکتور"}{/if}
-{if $sort eq 'order_id'}{assign var="sortLabel" value="شماره سفارش"}{/if}
+{if $sort eq 'order_id'}{assign var="sortLabel" value="شماره درخواست"}{/if}
 {if $sort eq 'amount_rial'}{assign var="sortLabel" value="مبلغ"}{/if}
 {if $sort eq 'status'}{assign var="sortLabel" value="وضعیت"}{/if}
 
@@ -13,12 +13,7 @@
             <div class="bp-hero__text">
                 <p class="bp-kicker">مدیریت تراکنش به‌پرداخت ملت</p>
                 <h1>کنترل کامل تراکنش‌ها</h1>
-                <p class="bp-lead">پایش و مدیریت تراکنش‌های بانکی با چیدمان تازه، تمرکز روی داده‌های کلیدی و تجربه تجاری.</p>
-                <div class="bp-chip-group">
-                    <span class="bp-chip"><i class="fas fa-database"></i> {$total|number_format} تراکنش</span>
-                    <span class="bp-chip bp-chip--soft"><i class="fas fa-layer-group"></i> صفحه {$page} از {$totalPages}</span>
-                    <span class="bp-chip bp-chip--ghost"><i class="fas fa-sort-amount-down-alt"></i> مرتب‌سازی: {$sortLabel}</span>
-                </div>
+                <p class="bp-lead">پایش و مدیریت تراکنش‌های بانکی با چیدمان تازه و تمرکز روی داده‌های کلیدی.</p>
             </div>
             <div class="bp-hero__stats">
                 <div class="bp-stat">
@@ -55,7 +50,7 @@
         <form method="GET" action="{$modulelink}" class="bp-filters">
             <label class="bp-field">
                 <span class="bp-field__label"><i class="fas fa-search"></i> جستجوی سریع</span>
-                <input type="text" name="search" value="{$search}" placeholder="شماره فاکتور، سفارش یا شناسه تراکنش">
+                <input type="text" name="search" value="{$search}" placeholder="شماره فاکتور، شماره درخواست یا شماره تراکنش">
             </label>
 
             <label class="bp-field">
@@ -89,7 +84,7 @@
             <div>
                 <p class="bp-kicker">گزارش تراکنش</p>
                 <h2>لیست تراکنش‌ها</h2>
-                <p class="bp-muted">نمایش فاکتور، شناسه سفارش، وضعیت و تاریخ با دسترسی سریع به جزئیات.</p>
+                <p class="bp-muted">نمایش فاکتور، شماره درخواست، وضعیت و تاریخ با دسترسی سریع به جزئیات.</p>
             </div>
             <div class="bp-chip bp-chip--ghost">
                 <i class="fas fa-info-circle"></i>
@@ -114,8 +109,8 @@
                                 فاکتور
                             </a>
                         </th>
-                        <th>سفارش</th>
-                        <th>تراکنش</th>
+                        <th>شماره درخواست</th>
+                        <th>شماره تراکنش</th>
                         <th>
                             <a class="bp-sortable {if $sort eq 'amount_rial'}is-active is-{$order}{/if}"
                                href="{$modulelink}&sort=amount_rial&order={if $sort eq 'amount_rial' && $order eq 'desc'}asc{else}desc{/if}&search={$search|escape:'url'}&status={$status_filter|escape:'url'}&date_from={$date_from|escape:'url'}&date_to={$date_to|escape:'url'}">
@@ -154,10 +149,10 @@
                                 </td>
                                 <td><span class="bp-code">{$transaction->order_id|escape:'html'}</span></td>
                                 <td>
-                                    {if $transaction->ref_id}
-                                        <button type="button" class="bp-copy" data-toggle="tooltip" title="کپی شناسه" onclick="copyToClipboard('{$transaction->ref_id}', this)">
+                                    {if $transaction->sale_reference_id}
+                                        <button type="button" class="bp-copy" data-toggle="tooltip" title="کپی شماره تراکنش" onclick="copyToClipboard('{$transaction->sale_reference_id}', this)">
                                             <i class="fas fa-copy"></i>
-                                            <span>{$transaction->ref_id|truncate:18:"...":true}</span>
+                                            <span>{$transaction->sale_reference_id|truncate:18:"...":true}</span>
                                         </button>
                                     {else}
                                         <span class="bp-muted">-</span>
