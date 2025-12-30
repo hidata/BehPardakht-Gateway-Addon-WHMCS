@@ -18,8 +18,8 @@ use WHMCS\Database\Capsule;
  */
 function behpardakht_transactions_config() {
     return [
-        "name" => "مدیریت تراکنش‌های بهپرداخت ملت",
-        "description" => "نمایش و مدیریت تراکنش‌های درگاه پرداخت به‌پرداخت ملت",
+        "name" => "مدیریت تراکنش به‌پرداخت ملت",
+        "description" => "داشبورد تجاری برای مدیریت تراکنش‌های درگاه پرداخت به‌پرداخت ملت",
         "version" => "2.0",
         "author" => "Behpardakht Manager",
         "language" => "farsi",
@@ -359,91 +359,29 @@ function behpardakht_export_excel() {
  * Sidebar Output
  */
 function behpardakht_transactions_sidebar($vars) {
-    // دریافت آمار
-    try {
-        $totalTransactions = Capsule::table('mod_behpardakht_transactions')->count();
-        $completedCount = Capsule::table('mod_behpardakht_transactions')->where('status', 'completed')->count();
-        $pendingCount = Capsule::table('mod_behpardakht_transactions')->where('status', 'pending')->count();
-        $failedCount = Capsule::table('mod_behpardakht_transactions')->where('status', 'failed')->count();
-
-        $totalAmount = Capsule::table('mod_behpardakht_transactions')
-            ->where('status', 'completed')
-            ->sum('amount_rial');
-
-        $totalAmountToman = $totalAmount ? number_format($totalAmount / 10, 0, '', ',') : '0';
-
-    } catch (Exception $e) {
-        $totalTransactions = $completedCount = $pendingCount = $failedCount = 0;
-        $totalAmountToman = '0';
-    }
-
     $sidebarHtml = '
     <div class="panel panel-default" style="margin-top: 0;">
         <div class="panel-heading">
             <h3 class="panel-title">
-                <i class="fas fa-chart-bar"></i> آمار تراکنش‌ها
+                <i class="fas fa-shield-alt"></i> مدیریت تراکنش به‌پرداخت ملت
             </h3>
         </div>
         <div class="panel-body">
-            <div class="list-group" style="margin-bottom: 0;">
-                <div class="list-group-item">
-                    <span class="badge badge-default">' . number_format($totalTransactions) . '</span>
-                    <i class="fas fa-list"></i> کل تراکنش‌ها
-                </div>
-                <div class="list-group-item">
-                    <span class="badge badge-success">' . number_format($completedCount) . '</span>
-                    <i class="fas fa-check-circle"></i> تراکنش‌های موفق
-                </div>
-                <div class="list-group-item">
-                    <span class="badge badge-warning">' . number_format($pendingCount) . '</span>
-                    <i class="fas fa-clock"></i> در انتظار
-                </div>
-                <div class="list-group-item">
-                    <span class="badge badge-danger">' . number_format($failedCount) . '</span>
-                    <i class="fas fa-times-circle"></i> ناموفق
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <div class="panel panel-default">
-        <div class="panel-heading">
-            <h3 class="panel-title">
-                <i class="fas fa-money-bill-wave"></i> مجموع درآمد
-            </h3>
-        </div>
-        <div class="panel-body text-center">
-            <h3 style="color: #ff6600; margin: 10px 0;">
-                <strong>' . $totalAmountToman . '</strong>
-                <small style="display: block; font-size: 14px; color: #6b7280; margin-top: 5px;">تومان</small>
-            </h3>
-            <small class="text-muted">از تراکنش‌های موفق</small>
-        </div>
-    </div>
-
-    <div class="panel panel-default">
-        <div class="panel-heading">
-            <h3 class="panel-title">
-                <i class="fas fa-info-circle"></i> راهنمای سریع
-            </h3>
-        </div>
-        <div class="panel-body">
+            <p style="margin: 0 0 10px; line-height: 1.7; color: #4b5563;">
+                دسترسی سریع به فیلترها و گزارش‌های به‌پرداخت ملت در یک نما.
+            </p>
             <ul class="list-unstyled" style="margin: 0;">
                 <li style="margin-bottom: 8px;">
                     <i class="fas fa-search text-primary"></i>
-                    <small>جستجو بر اساس فاکتور، سفارش یا تراکنش</small>
+                    <small>جستجو با شماره فاکتور، سفارش یا شناسه تراکنش</small>
                 </li>
                 <li style="margin-bottom: 8px;">
                     <i class="fas fa-filter text-primary"></i>
-                    <small>فیلتر بر اساس وضعیت و تاریخ</small>
-                </li>
-                <li style="margin-bottom: 8px;">
-                    <i class="fas fa-file-excel text-success"></i>
-                    <small>دریافت خروجی اکسل از تراکنش‌ها</small>
+                    <small>اعمال وضعیت و بازه زمانی دلخواه</small>
                 </li>
                 <li>
-                    <i class="fas fa-sort text-primary"></i>
-                    <small>مرتب‌سازی بر اساس ستون‌های جدول</small>
+                    <i class="fas fa-file-export text-success"></i>
+                    <small>خروجی اکسل از فهرست فعلی تراکنش‌ها</small>
                 </li>
             </ul>
         </div>
@@ -452,7 +390,7 @@ function behpardakht_transactions_sidebar($vars) {
     <div class="panel panel-default">
         <div class="panel-body text-center">
             <small class="text-muted">
-                نسخه 2.0 | بهپرداخت ملت
+                نسخه 2.0 | به‌پرداخت ملت
             </small>
         </div>
     </div>';
