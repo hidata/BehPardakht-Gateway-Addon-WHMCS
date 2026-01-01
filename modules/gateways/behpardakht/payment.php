@@ -48,6 +48,14 @@ $invoice = Capsule::table('tblinvoices')->where('id', $invoiceId)->first();
 if (!$invoice) {
     die("Invalid Invoice ID");
 }
+$clientId = (int)($invoice->userid ?? 0);
+$client = $clientId > 0
+    ? Capsule::table('tblclients')->where('id', $clientId)->first()
+    : null;
+$clientPhone = '';
+if ($client && isset($client->phonenumber)) {
+    $clientPhone = (string)$client->phonenumber;
+}
 
 // پارامترهای گیت‌وی
 $terminalId   = $gatewayParams['terminalId'];
@@ -55,6 +63,11 @@ $userName     = $gatewayParams['userName'];
 $userPassword = $gatewayParams['userPassword'];
 $callbackOverride = trim((string)($gatewayParams['callbackUrlOverride'] ?? ''));
 $paymentLanguage = strtolower((string)($gatewayParams['paymentLanguage'] ?? 'fa'));
+$nationalCodeMode = strtolower((string)($gatewayParams['nationalCodeMode'] ?? 'none'));
+$nationalCodeFieldId = (int)($gatewayParams['nationalCodeFieldId'] ?? 0);
+$nationalCodeKey = trim((string)($gatewayParams['nationalCodeKey'] ?? '2C7D202B960A96AA'));
+$requireNational = !empty($gatewayParams['nationalCodeRequire']) && $gatewayParams['nationalCodeRequire'] === 'on';
+$mobileFieldId = (int)($gatewayParams['mobileFieldId'] ?? 0);
 
 // واحد مبلغ سایت از تنظیمات درگاه: 'toman' یا 'rial'
 $unit = strtolower((string)($gatewayParams['unit'] ?? 'toman'));
@@ -65,16 +78,63 @@ if (!in_array($unit, ['toman','rial'], true)) {
 $callBackUrl = $callbackOverride !== ''
     ? $callbackOverride
     : $systemUrl . 'modules/gateways/callback/behpardakht.php';
-$apiUrl = 'https://bpm.shaparak.ir/pgwchannel/services/pgw?wsdl';
+$endpoints = behpardakht_getEndpoints($gatewayParams);
+$apiUrl = $endpoints['wsdl'];
 $paymentUrl = $paymentLanguage === 'en'
-    ? 'https://bpm.shaparak.ir/pgwchannel/enstartpay.mellat'
-    : 'https://bpm.shaparak.ir/pgwchannel/startpay.mellat';
+    ? $endpoints['startpay_en']
+    : $endpoints['startpay_fa'];
 
 // تبدیل مبلغ به «ریال» برای بانک
 $amountRial = (int)round($postedAmount * ($unit === 'toman' ? 10 : 1));
 
 // orderId عددی و یکتا (حداکثر ~18 رقم)
 $orderId = (int)substr(time() . str_pad((string)$invoiceId, 6, '0', STR_PAD_LEFT), 0, 18);
+$nationalCode = null;
+$encNationalCode = null;
+$mobileNo = null;
+
+if ($nationalCodeMode !== 'none') {
+    $nationalCode = behpardakht_normalizeNationalCode(
+        behpardakht_getCustomFieldValue($clientId, $nationalCodeFieldId)
+    );
+
+    if ($nationalCode === null && $requireNational) {
+        $reason = 'کد ملی مشتری یافت نشد و درگاه در حالت محدودیت ENC است.';
+        header('Location: ' . $systemUrl . 'viewinvoice.php?id=' . $invoiceId . '&paymentfailed=true&failurereason=' . urlencode($reason));
+        exit;
+    }
+
+    if ($nationalCode !== null) {
+        try {
+            $encNationalCode = behpardakht_encryptNationalCode($nationalCode, $nationalCodeKey !== '' ? $nationalCodeKey : '2C7D202B960A96AA');
+        } catch (RuntimeException $e) {
+            if ($requireNational) {
+                $reason = 'خطا در آماده‌سازی کد ملی: ' . $e->getMessage();
+                header('Location: ' . $systemUrl . 'viewinvoice.php?id=' . $invoiceId . '&paymentfailed=true&failurereason=' . urlencode($reason));
+                exit;
+            }
+        }
+    }
+
+    // استخراج موبایل برای حالت مانا
+    if ($nationalCodeMode === 'mana-mobile+enc') {
+        if (!$encNationalCode) {
+            $reason = 'کد ملی برای حالت مانا در دسترس نیست.';
+            header('Location: ' . $systemUrl . 'viewinvoice.php?id=' . $invoiceId . '&paymentfailed=true&failurereason=' . urlencode($reason));
+            exit;
+        }
+
+        $mobileFromField = behpardakht_getCustomFieldValue($clientId, $mobileFieldId);
+        $mobileCandidate = $mobileFromField !== null ? $mobileFromField : $clientPhone;
+        $mobileNo = behpardakht_normalizeIranMobile($mobileCandidate);
+
+        if (!$mobileNo) {
+            $reason = 'شماره موبایل معتبر برای حالت مانا یافت نشد.';
+            header('Location: ' . $systemUrl . 'viewinvoice.php?id=' . $invoiceId . '&paymentfailed=true&failurereason=' . urlencode($reason));
+            exit;
+        }
+    }
+}
 
 try {
     $soapOptions = [
@@ -107,9 +167,25 @@ try {
         'payerId'        => 0
     ];
 
+    if ($nationalCodeMode === 'payrequest-enc' && $encNationalCode) {
+        $parameters['enc'] = $encNationalCode;
+    }
+    if ($nationalCodeMode === 'mana-mobile+enc' && $mobileNo) {
+        $parameters['mobileNo'] = $mobileNo;
+        if ($encNationalCode) {
+            $parameters['enc'] = $encNationalCode;
+        }
+    }
+
     if ($debugMode) {
         $safe = $parameters; $safe['userPassword'] = '***';
-        logTransaction($gatewayModuleName, ['action'=>'payment_request','parameters'=>$safe,'unit'=>$unit], 'Request Sent');
+        logTransaction($gatewayModuleName, [
+            'action'=>'payment_request',
+            'parameters'=>$safe,
+            'unit'=>$unit,
+            'national_code_mode'=>$nationalCodeMode,
+            'enc_sent'=> $encNationalCode ? 'yes' : 'no'
+        ], 'Request Sent');
     }
 
     $result = $soapClient->bpPayRequest($parameters);
@@ -133,7 +209,14 @@ try {
         </head><body>
             <h2>در حال انتقال به درگاه بانک ملت</h2>
             <form id="pay" method="post" action="'.$paymentUrl.'">
-                <input type="hidden" name="RefId" value="'.htmlspecialchars($refId, ENT_QUOTES, 'UTF-8').'">
+                <input type="hidden" name="RefId" value="'.htmlspecialchars($refId, ENT_QUOTES, 'UTF-8').'">';
+                if ($nationalCodeMode === 'redirect-ENC' && $encNationalCode) {
+                    echo '<input type="hidden" name="ENC" value="'.htmlspecialchars($encNationalCode, ENT_QUOTES, 'UTF-8').'">';
+                } elseif ($nationalCodeMode === 'mana-mobile+enc' && $encNationalCode && $mobileNo) {
+                    echo '<input type="hidden" name="MobileNo" value="'.htmlspecialchars($mobileNo, ENT_QUOTES, 'UTF-8').'">';
+                    echo '<input type="hidden" name="enc" value="'.htmlspecialchars($encNationalCode, ENT_QUOTES, 'UTF-8').'">';
+                }
+                echo '
             </form>
             <script>document.getElementById("pay").submit();</script>
         </body></html>';

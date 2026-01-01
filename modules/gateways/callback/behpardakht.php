@@ -28,6 +28,7 @@ if (!in_array($unit, ['toman', 'rial'], true)) {
     $unit = 'toman';
 }
 
+$endpoints = behpardakht_getEndpoints($gatewayParams);
 $systemUrl = rtrim($gatewayParams['systemurl'] ?? '/', '/') . '/';
 
 // داده‌های برگشتی بانک
@@ -131,7 +132,7 @@ if ($finalAmount !== '' && (int)$finalAmount !== $storedAmount) {
 
 checkCbInvoiceID($invoiceId, $gatewayModuleName);
 
-$apiUrl = 'https://bpm.shaparak.ir/pgwchannel/services/pgw?wsdl';
+$apiUrl = $endpoints['wsdl'];
 
 try {
     $soap = new SoapClient($apiUrl, [
