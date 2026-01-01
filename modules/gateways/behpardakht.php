@@ -116,43 +116,24 @@ function behpardakht_config(): array
             'Default'     => 'toman',
             'Description' => 'مشخص کنید مبلغ‌های سایت بر مبنای تومان است یا ریال. (درگاه همیشه با «ریال» کار می‌کند.)',
         ],
-        'nationalCodeMode' => [
-            'FriendlyName' => 'محدودسازی کد ملی',
-            'Type' => 'dropdown',
-            'Options' => [
-                'none' => 'غیرفعال',
-                'payrequest-enc' => 'ارسال enc در PayRequest',
-                'redirect-ENC' => 'ارسال ENC در Redirect (Strong Auth)',
-                'mana-mobile+enc' => 'MobileNo + enc (مانا)',
-            ],
-            'Default' => 'none',
-            'Description' => 'برای استفاده از ویژگی ENC/enc در مستندات جدید، یکی از حالت‌های بالا را انتخاب کنید.',
+        'enable_national_code_auth' => [
+            'FriendlyName' => 'فعال‌سازی احراز هویت کد ملی (enc)',
+            'Type' => 'yesno',
+            'Description' => 'در صورت فعال‌سازی، پیش از ارسال به درگاه کد ملی معتبر گرفته و enc در bpPayRequest ارسال می‌شود.',
         ],
-        'nationalCodeFieldId' => [
+        'national_code_customfield' => [
             'FriendlyName' => 'شناسه فیلد کد ملی (Custom Field)',
             'Type' => 'dropdown',
             'Options' => $customFieldOptions,
             'Default' => '0',
-            'Description' => 'یکی از فیلدهای سفارشی مشتری (۱۰ رقمی) را برای دریافت کد ملی انتخاب کنید.',
+            'Description' => 'فیلد سفارشی مشتری که کد ملی ۱۰ رقمی در آن ذخیره شده است.', 
         ],
-        'nationalCodeKey' => [
-            'FriendlyName' => 'کلید ENC (هگز 16 کاراکتری)',
+        'national_code_auth_key_hex' => [
+            'FriendlyName' => 'کلید enc (هگز 16 کاراکتری)',
             'Type' => 'text',
             'Size' => '20',
             'Default' => '2C7D202B960A96AA',
-            'Description' => 'کلید رمزنگاری DES/ECB برای ENC. مقدار پیش‌فرض مطابق مستندات بانک است.',
-        ],
-        'nationalCodeRequire' => [
-            'FriendlyName' => 'الزام کد ملی',
-            'Type' => 'yesno',
-            'Description' => 'در حالت‌های ENC اگر فعال باشد، بدون کد ملی پرداخت شروع نمی‌شود.',
-        ],
-        'mobileFieldId' => [
-            'FriendlyName' => 'شناسه فیلد موبایل (Custom Field)',
-            'Type' => 'dropdown',
-            'Options' => $customFieldOptions,
-            'Default' => '0',
-            'Description' => 'برای حالت mana-mobile+enc، فیلد سفارشی موبایل (یا تلفن پروفایل) را انتخاب کنید.',
+            'Description' => 'کلید DES/ECB ثابت مطابق مستندات (پیش‌فرض: 2C7D202B960A96AA).',
         ],
     ];
 }

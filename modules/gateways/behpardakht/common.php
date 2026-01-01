@@ -117,6 +117,18 @@ if (!function_exists('behpardakht_normalizeNationalCode')) {
     }
 }
 
+if (!function_exists('behpardakht_mask')) {
+    function behpardakht_mask(string $input, int $keepEnd = 4): string
+    {
+        $len = strlen($input);
+        if ($len <= $keepEnd) {
+            return str_repeat('*', $len);
+        }
+
+        return str_repeat('*', max(0, $len - $keepEnd)) . substr($input, -$keepEnd);
+    }
+}
+
 if (!function_exists('behpardakht_normalizeIranMobile')) {
     function behpardakht_normalizeIranMobile(?string $value): ?string
     {
@@ -142,26 +154,50 @@ if (!function_exists('behpardakht_normalizeIranMobile')) {
 }
 
 if (!function_exists('behpardakht_encryptNationalCode')) {
-    function behpardakht_encryptNationalCode(string $nationalCode, string $hexKey = '2C7D202B960A96AA'): string
+    function behpardakht_encryptNationalCode(string $nationalCode, string $keyHex = '2C7D202B960A96AA'): string
     {
-        $nationalCode = trim($nationalCode);
-        $keyBin = hex2bin($hexKey);
-
-        if ($keyBin === false || strlen($keyBin) !== 8) {
-            throw new \RuntimeException('کلید ENC نامعتبر است (باید 16 کاراکتر هگز، 8 بایت باشد).');
+        $nationalCode = preg_replace('/\D+/', '', $nationalCode);
+        if (strlen($nationalCode) !== 10) {
+            throw new RuntimeException('کد ملی باید دقیقا 10 رقم باشد.');
         }
 
-        $ciphertext = openssl_encrypt(
-            $nationalCode,
-            'DES-ECB',
-            $keyBin,
-            OPENSSL_RAW_DATA
-        );
-
-        if ($ciphertext === false) {
-            throw new \RuntimeException('رمزنگاری ENC با DES در این سرور در دسترس نیست یا با خطا مواجه شد.');
+        $keyHex = strtoupper(trim($keyHex));
+        if (!preg_match('/^[0-9A-F]{16}$/', $keyHex)) {
+            throw new RuntimeException('کلید enc باید دقیقا 16 کاراکتر HEX باشد.');
         }
 
-        return strtoupper(bin2hex($ciphertext));
+        $plainBin = hex2bin($nationalCode);
+        $keyBin   = hex2bin($keyHex);
+
+        if ($plainBin === false || $keyBin === false) {
+            throw new RuntimeException('hex2bin failed.');
+        }
+
+        $encHex = null;
+        $methods = array_map('strtolower', openssl_get_cipher_methods(true));
+        if (in_array('des-ecb', $methods, true)) {
+            $cipherBin = openssl_encrypt($plainBin, 'DES-ECB', $keyBin, OPENSSL_RAW_DATA);
+            if ($cipherBin === false) {
+                throw new RuntimeException('OpenSSL DES-ECB encryption failed.');
+            }
+            $encHex = strtoupper(bin2hex($cipherBin));
+        } elseif (class_exists(\phpseclib3\Crypt\DES::class)) {
+            $des = new \phpseclib3\Crypt\DES('ecb');
+            $des->setKey($keyBin);
+            $des->enablePadding();
+            $encHex = strtoupper(bin2hex($des->encrypt($plainBin)));
+        } else {
+            throw new RuntimeException('DES cipher not available. Enable OpenSSL legacy provider or phpseclib3.');
+        }
+
+        if (!preg_match('/^[0-9A-F]+$/', $encHex)) {
+            throw new RuntimeException('enc output not hex.');
+        }
+
+        if (strlen($encHex) !== 16) {
+            throw new RuntimeException('enc output length invalid. Expected 16 hex chars, got ' . strlen($encHex));
+        }
+
+        return $encHex;
     }
 }

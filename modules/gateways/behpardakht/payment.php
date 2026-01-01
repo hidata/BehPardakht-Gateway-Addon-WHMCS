@@ -49,13 +49,6 @@ if (!$invoice) {
     die("Invalid Invoice ID");
 }
 $clientId = (int)($invoice->userid ?? 0);
-$client = $clientId > 0
-    ? Capsule::table('tblclients')->where('id', $clientId)->first()
-    : null;
-$clientPhone = '';
-if ($client && isset($client->phonenumber)) {
-    $clientPhone = (string)$client->phonenumber;
-}
 
 // پارامترهای گیت‌وی
 $terminalId   = $gatewayParams['terminalId'];
@@ -63,11 +56,9 @@ $userName     = $gatewayParams['userName'];
 $userPassword = $gatewayParams['userPassword'];
 $callbackOverride = trim((string)($gatewayParams['callbackUrlOverride'] ?? ''));
 $paymentLanguage = strtolower((string)($gatewayParams['paymentLanguage'] ?? 'fa'));
-$nationalCodeMode = strtolower((string)($gatewayParams['nationalCodeMode'] ?? 'none'));
-$nationalCodeFieldId = (int)($gatewayParams['nationalCodeFieldId'] ?? 0);
-$nationalCodeKey = trim((string)($gatewayParams['nationalCodeKey'] ?? '2C7D202B960A96AA'));
-$requireNational = !empty($gatewayParams['nationalCodeRequire']) && $gatewayParams['nationalCodeRequire'] === 'on';
-$mobileFieldId = (int)($gatewayParams['mobileFieldId'] ?? 0);
+$enableNationalAuth = !empty($gatewayParams['enable_national_code_auth']) && $gatewayParams['enable_national_code_auth'] === 'on';
+$nationalCodeFieldId = (int)($gatewayParams['national_code_customfield'] ?? 0);
+$nationalCodeKeyHex = trim((string)($gatewayParams['national_code_auth_key_hex'] ?? ''));
 
 // واحد مبلغ سایت از تنظیمات درگاه: 'toman' یا 'rial'
 $unit = strtolower((string)($gatewayParams['unit'] ?? 'toman'));
@@ -91,48 +82,29 @@ $amountRial = (int)round($postedAmount * ($unit === 'toman' ? 10 : 1));
 $orderId = (int)substr(time() . str_pad((string)$invoiceId, 6, '0', STR_PAD_LEFT), 0, 18);
 $nationalCode = null;
 $encNationalCode = null;
-$mobileNo = null;
 
-if ($nationalCodeMode !== 'none') {
+if ($enableNationalAuth) {
     $nationalCode = behpardakht_normalizeNationalCode(
         behpardakht_getCustomFieldValue($clientId, $nationalCodeFieldId)
     );
 
-    if ($nationalCode === null && $requireNational) {
-        $reason = 'کد ملی مشتری یافت نشد و درگاه در حالت محدودیت ENC است.';
+    if ($nationalCode === null) {
+        $reason = 'کد ملی نامعتبر است. لطفا کد ملی 10 رقمی را در پروفایل خود ثبت کنید و سپس پرداخت را انجام دهید.';
         header('Location: ' . $systemUrl . 'viewinvoice.php?id=' . $invoiceId . '&paymentfailed=true&failurereason=' . urlencode($reason));
         exit;
     }
 
-    if ($nationalCode !== null) {
-        try {
-            $encNationalCode = behpardakht_encryptNationalCode($nationalCode, $nationalCodeKey !== '' ? $nationalCodeKey : '2C7D202B960A96AA');
-        } catch (RuntimeException $e) {
-            if ($requireNational) {
-                $reason = 'خطا در آماده‌سازی کد ملی: ' . $e->getMessage();
-                header('Location: ' . $systemUrl . 'viewinvoice.php?id=' . $invoiceId . '&paymentfailed=true&failurereason=' . urlencode($reason));
-                exit;
-            }
-        }
-    }
+    $keyHex = $nationalCodeKeyHex !== '' ? $nationalCodeKeyHex : '2C7D202B960A96AA';
 
-    // استخراج موبایل برای حالت مانا
-    if ($nationalCodeMode === 'mana-mobile+enc') {
-        if (!$encNationalCode) {
-            $reason = 'کد ملی برای حالت مانا در دسترس نیست.';
-            header('Location: ' . $systemUrl . 'viewinvoice.php?id=' . $invoiceId . '&paymentfailed=true&failurereason=' . urlencode($reason));
-            exit;
+    try {
+        $encNationalCode = behpardakht_encryptNationalCode($nationalCode, $keyHex);
+    } catch (RuntimeException $e) {
+        $reason = $e->getMessage();
+        if (stripos($reason, 'DES cipher not available') !== false) {
+            $reason = 'رمزنگاری DES روی سرور فعال نیست؛ لطفاً OpenSSL legacy provider را فعال یا phpseclib3 را نصب کنید.';
         }
-
-        $mobileFromField = behpardakht_getCustomFieldValue($clientId, $mobileFieldId);
-        $mobileCandidate = $mobileFromField !== null ? $mobileFromField : $clientPhone;
-        $mobileNo = behpardakht_normalizeIranMobile($mobileCandidate);
-
-        if (!$mobileNo) {
-            $reason = 'شماره موبایل معتبر برای حالت مانا یافت نشد.';
-            header('Location: ' . $systemUrl . 'viewinvoice.php?id=' . $invoiceId . '&paymentfailed=true&failurereason=' . urlencode($reason));
-            exit;
-        }
+        header('Location: ' . $systemUrl . 'viewinvoice.php?id=' . $invoiceId . '&paymentfailed=true&failurereason=' . urlencode($reason));
+        exit;
     }
 }
 
@@ -167,23 +139,20 @@ try {
         'payerId'        => 0
     ];
 
-    if ($nationalCodeMode === 'payrequest-enc' && $encNationalCode) {
+    if ($enableNationalAuth && $encNationalCode) {
         $parameters['enc'] = $encNationalCode;
-    }
-    if ($nationalCodeMode === 'mana-mobile+enc' && $mobileNo) {
-        $parameters['mobileNo'] = $mobileNo;
-        if ($encNationalCode) {
-            $parameters['enc'] = $encNationalCode;
-        }
     }
 
     if ($debugMode) {
         $safe = $parameters; $safe['userPassword'] = '***';
+        if (isset($safe['enc'])) {
+            $safe['enc'] = behpardakht_mask($safe['enc']);
+        }
         logTransaction($gatewayModuleName, [
             'action'=>'payment_request',
             'parameters'=>$safe,
             'unit'=>$unit,
-            'national_code_mode'=>$nationalCodeMode,
+            'national_code_auth'=> $enableNationalAuth ? 'on' : 'off',
             'enc_sent'=> $encNationalCode ? 'yes' : 'no'
         ], 'Request Sent');
     }
@@ -210,12 +179,6 @@ try {
             <h2>در حال انتقال به درگاه بانک ملت</h2>
             <form id="pay" method="post" action="'.$paymentUrl.'">
                 <input type="hidden" name="RefId" value="'.htmlspecialchars($refId, ENT_QUOTES, 'UTF-8').'">';
-                if ($nationalCodeMode === 'redirect-ENC' && $encNationalCode) {
-                    echo '<input type="hidden" name="ENC" value="'.htmlspecialchars($encNationalCode, ENT_QUOTES, 'UTF-8').'">';
-                } elseif ($nationalCodeMode === 'mana-mobile+enc' && $encNationalCode && $mobileNo) {
-                    echo '<input type="hidden" name="MobileNo" value="'.htmlspecialchars($mobileNo, ENT_QUOTES, 'UTF-8').'">';
-                    echo '<input type="hidden" name="enc" value="'.htmlspecialchars($encNationalCode, ENT_QUOTES, 'UTF-8').'">';
-                }
                 echo '
             </form>
             <script>document.getElementById("pay").submit();</script>
