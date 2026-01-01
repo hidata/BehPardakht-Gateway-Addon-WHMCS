@@ -55,6 +55,21 @@ function behpardakht_config(): array
             'Type' => 'password', 'Size' => '25', 'Default' => '',
             'Description' => 'رمز عبور دریافتی از بانک',
         ],
+        'callbackUrlOverride' => [
+            'FriendlyName' => 'آدرس بازگشت (Callback)',
+            'Type' => 'text', 'Size' => '255', 'Default' => '',
+            'Description' => 'در صورت خالی بودن، آدرس بازگشت به‌صورت خودکار بر اساس دامنه WHMCS ساخته می‌شود.',
+        ],
+        'paymentLanguage' => [
+            'FriendlyName' => 'زبان پرداخت',
+            'Type' => 'dropdown',
+            'Options' => [
+                'fa' => 'فارسی',
+                'en' => 'English',
+            ],
+            'Default' => 'fa',
+            'Description' => 'در صورت انتخاب English، هدایت به صفحه انگلیسی درگاه انجام می‌شود.',
+        ],
         'testMode' => [
             'FriendlyName' => 'حالت تست',
             'Type' => 'yesno',
@@ -93,13 +108,51 @@ function behpardakht_activate(): array
             $table->string('sale_reference_id', 64)->nullable()->index();
             $table->unsignedBigInteger('amount_rial');
             $table->string('card_holder_pan', 64)->nullable();
+            $table->unsignedBigInteger('final_amount_rial')->nullable();
             $table->enum('status', ['pending','completed','failed'])->default('pending');
             $table->string('error_code', 16)->nullable();
+            $table->enum('refund_status', ['none','pending','completed','failed','unknown'])->default('none');
+            $table->unsignedBigInteger('refund_order_id')->nullable();
+            $table->unsignedBigInteger('refund_amount_rial')->nullable();
+            $table->string('refund_reference_number', 128)->nullable();
+            $table->string('refund_error_code', 32)->nullable();
+            $table->dateTime('refund_created_at')->nullable();
+            $table->dateTime('refund_updated_at')->nullable();
             $table->dateTime('created_at');
             $table->dateTime('updated_at')->nullable();
         });
     } catch (\Exception $e) {
         // اگر جدول قبلا وجود داشت، نادیده بگیر
+        $schema = Capsule::schema();
+        if ($schema->hasTable('mod_behpardakht_transactions')) {
+            $schema->table('mod_behpardakht_transactions', function ($table) use ($schema) {
+                /** @var \Illuminate\Database\Schema\Blueprint $table */
+                if (!$schema->hasColumn('mod_behpardakht_transactions', 'final_amount_rial')) {
+                    $table->unsignedBigInteger('final_amount_rial')->nullable()->after('amount_rial');
+                }
+                if (!$schema->hasColumn('mod_behpardakht_transactions', 'refund_status')) {
+                    $table->enum('refund_status', ['none','pending','completed','failed','unknown'])->default('none')->after('error_code');
+                }
+                if (!$schema->hasColumn('mod_behpardakht_transactions', 'refund_order_id')) {
+                    $table->unsignedBigInteger('refund_order_id')->nullable()->after('refund_status');
+                }
+                if (!$schema->hasColumn('mod_behpardakht_transactions', 'refund_amount_rial')) {
+                    $table->unsignedBigInteger('refund_amount_rial')->nullable()->after('refund_order_id');
+                }
+                if (!$schema->hasColumn('mod_behpardakht_transactions', 'refund_reference_number')) {
+                    $table->string('refund_reference_number', 128)->nullable()->after('refund_amount_rial');
+                }
+                if (!$schema->hasColumn('mod_behpardakht_transactions', 'refund_error_code')) {
+                    $table->string('refund_error_code', 32)->nullable()->after('refund_reference_number');
+                }
+                if (!$schema->hasColumn('mod_behpardakht_transactions', 'refund_created_at')) {
+                    $table->dateTime('refund_created_at')->nullable()->after('refund_error_code');
+                }
+                if (!$schema->hasColumn('mod_behpardakht_transactions', 'refund_updated_at')) {
+                    $table->dateTime('refund_updated_at')->nullable()->after('refund_created_at');
+                }
+            });
+        }
     }
 
     return ['status' => 'success', 'description' => 'به‌پرداخت ملت فعال شد.'];
@@ -159,7 +212,6 @@ function behpardakht_refund(array $params): array
     $terminalId   = $params['terminalId'] ?? '';
     $userName     = $params['userName'] ?? '';
     $userPassword = $params['userPassword'] ?? '';
-    $testMode     = !empty($params['testMode']) && $params['testMode'] === 'on';
 
     $saleReferenceId = $params['transid']; // ترنس‌آی‌دی WHMCS معمولاً SaleReferenceId است
     $currencyCode = strtoupper($params['currency'] ?? ''); // کُد ارز فاکتور
@@ -181,10 +233,13 @@ function behpardakht_refund(array $params): array
         return ['status' => 'error', 'rawdata' => 'Original transaction not found for refund'];
     }
 
-    $apiUrl = $testMode
-        ? 'https://sandbox.banktest.ir/mellat/bpm.shaparak.ir/pgwchannel/services/pgw?wsdl'
-        : 'https://bpm.shaparak.ir/pgwchannel/services/pgw?wsdl';
+    if (($tx->status ?? '') !== 'completed' || empty($tx->sale_reference_id)) {
+        return ['status' => 'error', 'rawdata' => 'Refund is only allowed for settled transactions with reference id'];
+    }
 
+    $apiUrl = 'https://bpm.shaparak.ir/pgwchannel/services/pgw?wsdl';
+
+    $refundOrderId = (int) substr((string)time() . str_pad((string)mt_rand(0, 999), 3, '0', STR_PAD_LEFT), 0, 18);
     try {
         $soap = new SoapClient($apiUrl, [
             'exceptions' => true,
@@ -204,20 +259,62 @@ function behpardakht_refund(array $params): array
             'terminalId'      => $terminalId,
             'userName'        => $userName,
             'userPassword'    => $userPassword,
-            'orderId'         => time(),              // شناسه جدید برای درخواست ریفاند
+            'orderId'         => $refundOrderId,      // شناسه جدید برای درخواست ریفاند
             'saleOrderId'     => (int)$tx->order_id,  // orderId تراکنش اصلی
             'saleReferenceId' => $saleReferenceId,    // کد مرجع بانکی
             'refundAmount'    => $refundAmountRial,
-            'localDate'       => date('Ymd'),
-            'localTime'       => date('His'),
         ];
 
         $res = $soap->bpRefundRequest($req);
-        if (($res->return ?? null) === '0') {
-            return ['status' => 'success', 'rawdata' => '0', 'transid' => $saleReferenceId];
+        $resultString = trim((string)($res->return ?? ''));
+        $parts = explode(',', $resultString, 2);
+        $resCode = trim($parts[0] ?? '');
+        $refundRefNum = trim($parts[1] ?? '');
+
+        $now = date('Y-m-d H:i:s');
+        $update = [
+            'refund_order_id' => $refundOrderId,
+            'refund_amount_rial' => $refundAmountRial,
+            'refund_reference_number' => $refundRefNum !== '' ? $refundRefNum : null,
+            'refund_error_code' => $resCode !== '' ? $resCode : null,
+            'refund_updated_at' => $now,
+        ];
+
+        if ($resCode === '0') {
+            $update['refund_status'] = 'pending';
+            $update['refund_created_at'] = $now;
+            Capsule::table('mod_behpardakht_transactions')
+                ->where('id', $tx->id)
+                ->update($update);
+
+            return [
+                'status' => 'success',
+                'rawdata' => $resultString,
+                'transid' => $refundRefNum !== '' ? $refundRefNum : (string)$refundOrderId,
+            ];
         }
-        return ['status' => 'declined', 'rawdata' => behpardakht_getErrorMessage((string)$res->return)];
+
+        $update['refund_status'] = $resCode === '' ? 'unknown' : 'failed';
+        Capsule::table('mod_behpardakht_transactions')
+            ->where('id', $tx->id)
+            ->update($update);
+
+        return [
+            'status' => 'error',
+            'rawdata' => $resultString !== '' ? $resultString : 'No response',
+            'transid' => '',
+        ];
     } catch (Exception $e) {
-        return ['status' => 'error', 'rawdata' => $e->getMessage()];
+        Capsule::table('mod_behpardakht_transactions')
+            ->where('id', $tx->id)
+            ->update([
+                'refund_status' => 'unknown',
+                'refund_order_id' => $refundOrderId,
+                'refund_amount_rial' => $refundAmountRial,
+                'refund_error_code' => 'exception',
+                'refund_updated_at' => date('Y-m-d H:i:s'),
+            ]);
+
+        return ['status' => 'error', 'rawdata' => $e->getMessage(), 'transid' => ''];
     }
 }

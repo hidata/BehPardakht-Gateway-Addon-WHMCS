@@ -2,7 +2,7 @@
 /**
  * Behpardakht Callback Handler
  * Path: /modules/gateways/callback/behpardakht.php
- * @version 2.1.4
+ * @version 2.2.0
  * @requires PHP >= 8.1
  * @requires WHMCS >= 8.11
  */
@@ -23,22 +23,20 @@ if (!$gatewayParams['type']) {
 }
 
 $debugMode = !empty($gatewayParams['debugMode']) && $gatewayParams['debugMode'] === 'on';
-$testMode  = !empty($gatewayParams['testMode']) && $gatewayParams['testMode'] === 'on';
-
-// واحد مبلغ سایت از تنظیمات درگاه: 'toman' یا 'rial'
 $unit = strtolower((string)($gatewayParams['unit'] ?? 'toman'));
-if (!in_array($unit, ['toman','rial'], true)) {
+if (!in_array($unit, ['toman', 'rial'], true)) {
     $unit = 'toman';
 }
 
+$systemUrl = rtrim($gatewayParams['systemurl'] ?? '/', '/') . '/';
+
 // داده‌های برگشتی بانک
-$refId           = $_POST['RefId'] ?? '';
-$resCode         = $_POST['ResCode'] ?? '';
-$saleOrderId     = $_POST['SaleOrderId'] ?? '';
-$saleReferenceId = $_POST['SaleReferenceId'] ?? '';
-$cardHolderInfo  = $_POST['CardHolderInfo'] ?? '';
-$cardHolderPan   = $_POST['CardHolderPan'] ?? '';
-$finalAmount     = isset($_POST['FinalAmount']) ? (int)$_POST['FinalAmount'] : 0; // همیشه «ریال»
+$refId           = trim((string)($_POST['RefId'] ?? ''));
+$resCode         = trim((string)($_POST['ResCode'] ?? ''));
+$saleOrderId     = trim((string)($_POST['SaleOrderId'] ?? ''));
+$saleReferenceId = trim((string)($_POST['SaleReferenceId'] ?? ''));
+$cardHolderPan   = trim((string)($_POST['CardHolderPan'] ?? ''));
+$finalAmount     = trim((string)($_POST['FinalAmount'] ?? '')); // ریال
 
 if ($debugMode) {
     logTransaction($gatewayModuleName, [
@@ -47,7 +45,6 @@ if ($debugMode) {
         'ResCode' => $resCode,
         'SaleOrderId' => $saleOrderId,
         'SaleReferenceId' => $saleReferenceId,
-        'CardHolderInfo' => $cardHolderInfo,
         'CardHolderPan' => $cardHolderPan,
         'FinalAmountRial' => $finalAmount,
         'unit' => $unit,
@@ -56,39 +53,260 @@ if ($debugMode) {
 
 // یافتن رکورد تراکنش
 $tx = null;
-if ($refId) {
+if ($refId !== '') {
     $tx = Capsule::table('mod_behpardakht_transactions')->where('ref_id', $refId)->first();
 }
-if (!$tx && $saleOrderId) {
+if (!$tx && $saleOrderId !== '') {
     $tx = Capsule::table('mod_behpardakht_transactions')->where('order_id', (int)$saleOrderId)->first();
 }
 if (!$tx) {
     if ($debugMode) {
-        logTransaction($gatewayModuleName, ['action'=>'callback_error','msg'=>'Transaction not found','RefId'=>$refId,'SaleOrderId'=>$saleOrderId], 'Transaction Not Found');
+        logTransaction($gatewayModuleName, ['action' => 'callback_error', 'msg' => 'Transaction not found', 'RefId' => $refId, 'SaleOrderId' => $saleOrderId], 'Transaction Not Found');
     }
-    header('Location: ' . $gatewayParams['systemurl'] . 'clientarea.php?action=invoices&status=unpaid&error=' . urlencode('تراکنش یافت نشد'));
+    header('Location: ' . $systemUrl . 'clientarea.php?action=invoices&status=unpaid&error=' . urlencode('تراکنش یافت نشد'));
     exit;
 }
+
 $invoiceId = (int)$tx->invoice_id;
 
-// باید SaleReferenceId داشته باشیم
-if ($resCode === '0' && empty($saleReferenceId)) {
-    if ($debugMode) {
-        logTransaction($gatewayModuleName, ['action'=>'callback_error','msg'=>'Missing SaleReferenceId','RefId'=>$refId], 'Missing Reference');
-    }
-    header('Location: ' . $gatewayParams['systemurl'] . 'viewinvoice.php?id=' . $invoiceId . '&paymentfailed=true&failurereason=' . urlencode('کد مرجع بانکی نامعتبر است'));
+// بررسی تطبیق الزامی RefId و SaleOrderId
+if ($refId === '' || $refId !== $tx->ref_id || $saleOrderId === '' || (string)$saleOrderId !== (string)$tx->order_id) {
+    Capsule::table('mod_behpardakht_transactions')
+        ->where('id', $tx->id)
+        ->update([
+            'status' => 'failed',
+            'error_code' => 'MISMATCH',
+            'updated_at' => date('Y-m-d H:i:s'),
+        ]);
+    header('Location: ' . $systemUrl . 'viewinvoice.php?id=' . $invoiceId . '&paymentfailed=true&failurereason=' . urlencode('تطبیق تراکنش نامعتبر است'));
     exit;
 }
 
-// WSDL
-$apiUrl = $testMode
-    ? 'https://sandbox.banktest.ir/mellat/bpm.shaparak.ir/pgwchannel/services/pgw?wsdl'
-    : 'https://bpm.shaparak.ir/pgwchannel/services/pgw?wsdl';
+// پرداخت قبلاً نهایی شده
+if (($tx->status ?? '') === 'completed') {
+    header('Location: ' . $systemUrl . 'viewinvoice.php?id=' . $invoiceId . '&paymentsuccess=true');
+    exit;
+}
 
-// کاربر پرداخت را تأیید کرده
-if ($resCode === '0') {
-    checkCbInvoiceID($invoiceId, $gatewayModuleName);
-    checkCbTransID($saleReferenceId);
+// رد یا خطای کاربر
+if ($resCode !== '0') {
+    Capsule::table('mod_behpardakht_transactions')
+        ->where('id', $tx->id)
+        ->update([
+            'status' => 'failed',
+            'error_code' => $resCode,
+            'updated_at' => date('Y-m-d H:i:s'),
+        ]);
+    $msg = behpardakht_getErrorMessage($resCode);
+    header('Location: ' . $systemUrl . 'viewinvoice.php?id=' . $invoiceId . '&paymentfailed=true&failurereason=' . urlencode($msg));
+    exit;
+}
+
+// حتماً باید SaleReferenceId داشته باشیم
+if ($saleReferenceId === '') {
+    Capsule::table('mod_behpardakht_transactions')
+        ->where('id', $tx->id)
+        ->update([
+            'status' => 'failed',
+            'error_code' => 'NO_REFERENCE',
+            'updated_at' => date('Y-m-d H:i:s'),
+        ]);
+    header('Location: ' . $systemUrl . 'viewinvoice.php?id=' . $invoiceId . '&paymentfailed=true&failurereason=' . urlencode('کد مرجع بانکی ارسال نشده است'));
+    exit;
+}
+
+// کنترل مبلغ نهایی در صورت ارسال
+$storedAmount = (int)$tx->amount_rial;
+if ($finalAmount !== '' && (int)$finalAmount !== $storedAmount) {
+    Capsule::table('mod_behpardakht_transactions')
+        ->where('id', $tx->id)
+        ->update([
+            'status' => 'failed',
+            'error_code' => 'AMOUNT_MISMATCH',
+            'updated_at' => date('Y-m-d H:i:s'),
+        ]);
+    header('Location: ' . $systemUrl . 'viewinvoice.php?id=' . $invoiceId . '&paymentfailed=true&failurereason=' . urlencode('مبلغ تراکنش معتبر نیست'));
+    exit;
+}
+
+checkCbInvoiceID($invoiceId, $gatewayModuleName);
+
+$apiUrl = 'https://bpm.shaparak.ir/pgwchannel/services/pgw?wsdl';
+
+try {
+    $soap = new SoapClient($apiUrl, [
+        'exceptions' => true,
+        'connection_timeout' => 60,
+        'cache_wsdl' => WSDL_CACHE_NONE,
+        'encoding' => 'UTF-8',
+        'trace' => $debugMode,
+        'stream_context' => stream_context_create([
+            'ssl' => [
+                'verify_peer'       => true,
+                'verify_peer_name'  => true,
+                'allow_self_signed' => false,
+            ]
+        ])
+    ]);
+
+    $verifyParams = [
+        'terminalId'      => $gatewayParams['terminalId'],
+        'userName'        => $gatewayParams['userName'],
+        'userPassword'    => $gatewayParams['userPassword'],
+        'orderId'         => (int)$tx->order_id,
+        'saleOrderId'     => (int)$saleOrderId,
+        'saleReferenceId' => (int)$saleReferenceId,
+    ];
+
+    $verifyCode = behpardakht_verifySettleWithRetry($soap, $verifyParams, $debugMode);
+
+    $settleOk = false;
+    $lastCode = $verifyCode;
+
+    if (in_array($verifyCode, ['0', '45'], true)) {
+        $settleOk = true;
+    } elseif ($verifyCode === '43') {
+        // fallback به settle کلاسیک
+        $settleCode = behpardakht_settleWithRetry($soap, $verifyParams, $debugMode);
+        $lastCode = $settleCode;
+        if (in_array($settleCode, ['0', '45'], true)) {
+            $settleOk = true;
+        }
+    }
+
+    if ($settleOk) {
+        $finalAmountRial = $finalAmount !== '' ? (int)$finalAmount : $storedAmount;
+        Capsule::table('mod_behpardakht_transactions')
+            ->where('id', $tx->id)
+            ->update([
+                'status' => 'completed',
+                'sale_reference_id' => $saleReferenceId,
+                'card_holder_pan' => $cardHolderPan !== '' ? $cardHolderPan : null,
+                'final_amount_rial' => $finalAmountRial,
+                'updated_at' => date('Y-m-d H:i:s'),
+            ]);
+
+        $amountSite = $unit === 'toman' ? $finalAmountRial / 10 : $finalAmountRial;
+        checkCbTransID($saleReferenceId);
+        addInvoicePayment(
+            $invoiceId,
+            $saleReferenceId,
+            $amountSite,
+            0,
+            $gatewayModuleName
+        );
+
+        if ($debugMode) {
+            logTransaction($gatewayModuleName, [
+                'action' => 'payment_success',
+                'RefId' => $refId,
+                'SaleReferenceId' => $saleReferenceId,
+                'FinalAmountRial' => $finalAmountRial,
+                'RecordedAmount' => $amountSite,
+                'unit' => $unit,
+            ], 'Success');
+        }
+
+        header('Location: ' . $systemUrl . 'viewinvoice.php?id=' . $invoiceId . '&paymentsuccess=true');
+        exit;
+    }
+
+    behpardakht_attemptReversal($apiUrl, $gatewayParams, (int)$tx->order_id, (int)$saleOrderId, (int)$saleReferenceId, $debugMode, $gatewayModuleName);
+    $msg = behpardakht_getErrorMessage((string)$lastCode);
+    Capsule::table('mod_behpardakht_transactions')
+        ->where('id', $tx->id)
+        ->update([
+            'status' => 'failed',
+            'error_code' => $lastCode,
+            'updated_at' => date('Y-m-d H:i:s'),
+        ]);
+    header('Location: ' . $systemUrl . 'viewinvoice.php?id=' . $invoiceId . '&paymentfailed=true&failurereason=' . urlencode($msg));
+    exit;
+} catch (Exception $e) {
+    if ($debugMode) {
+        logTransaction($gatewayModuleName, ['action' => 'callback_exception', 'error' => $e->getMessage()], 'Exception');
+    }
+    header('Location: ' . $systemUrl . 'viewinvoice.php?id=' . $invoiceId . '&paymentfailed=true&failurereason=' . urlencode('خطای سیستمی'));
+    exit;
+}
+
+/**
+ * Verify + Settle یکپارچه با ریتری
+ */
+function behpardakht_verifySettleWithRetry(SoapClient $soap, array $params, bool $debugMode): string
+{
+    $gatewayModuleName = 'behpardakht';
+    $retryable = ['34', '31', '32', '46', '61', '421'];
+    $attempt = 0;
+    $lastCode = '';
+
+    while ($attempt < 3) {
+        $attempt++;
+        if ($debugMode) {
+            $safe = $params; $safe['userPassword'] = '***';
+            logTransaction($gatewayModuleName, ['action' => 'verify_settle_attempt', 'attempt' => $attempt, 'params' => $safe], 'VerifySettle Attempt');
+        }
+
+        $result = $soap->bpVerifySettleRequest($params);
+        $code = trim((string)($result->return ?? ''));
+        $lastCode = $code;
+
+        if ($debugMode) {
+            logTransaction($gatewayModuleName, ['action' => 'verify_settle_response', 'attempt' => $attempt, 'code' => $code], 'VerifySettle Response');
+        }
+
+        if (!in_array($code, $retryable, true)) {
+            break;
+        }
+
+        sleep(1 << ($attempt - 1)); // 1,2,4
+    }
+
+    return $lastCode;
+}
+
+/**
+ * Settle کلاسیک با ریتری (برای کد 43)
+ */
+function behpardakht_settleWithRetry(SoapClient $soap, array $params, bool $debugMode): string
+{
+    $gatewayModuleName = 'behpardakht';
+    $retryable = ['34', '46', '61', '421', '31', '32'];
+    $attempt = 0;
+    $lastCode = '';
+
+    while ($attempt < 3) {
+        $attempt++;
+        if ($debugMode) {
+            $safe = $params; $safe['userPassword'] = '***';
+            logTransaction($gatewayModuleName, ['action' => 'settle_attempt', 'attempt' => $attempt, 'params' => $safe], 'Settle Attempt');
+        }
+
+        $response = $soap->bpSettleRequest($params);
+        $code = trim((string)($response->return ?? ''));
+        $lastCode = $code;
+
+        if ($debugMode) {
+            logTransaction($gatewayModuleName, ['action' => 'settle_response', 'attempt' => $attempt, 'code' => $code], 'Settle Response');
+        }
+
+        if (!in_array($code, $retryable, true)) {
+            break;
+        }
+        sleep(1 << ($attempt - 1));
+    }
+
+    return $lastCode;
+}
+
+/**
+ * Reverse در صورت خطا (Best-effort)
+ */
+function behpardakht_attemptReversal(string $apiUrl, array $gatewayParams, int $orderId, int $saleOrderId, int $saleReferenceId, bool $debugMode, string $moduleName): void
+{
+    if (!$saleReferenceId) {
+        return;
+    }
 
     try {
         $soap = new SoapClient($apiUrl, [
@@ -96,229 +314,31 @@ if ($resCode === '0') {
             'connection_timeout' => 60,
             'cache_wsdl' => WSDL_CACHE_NONE,
             'encoding' => 'UTF-8',
-            'trace' => $debugMode,
             'stream_context' => stream_context_create([
                 'ssl' => [
                     'verify_peer'       => true,
                     'verify_peer_name'  => true,
                     'allow_self_signed' => false,
-                    // 'cafile' => '/etc/ssl/certs/ca-certificates.crt',
                 ]
             ])
         ]);
 
-        // Verify
-        $verifyParams = [
+        $params = [
             'terminalId'      => $gatewayParams['terminalId'],
             'userName'        => $gatewayParams['userName'],
             'userPassword'    => $gatewayParams['userPassword'],
-            'orderId'         => (int)$tx->order_id,
-            'saleOrderId'     => (int)$tx->order_id,
-            'saleReferenceId' => $saleReferenceId
+            'orderId'         => $orderId,
+            'saleOrderId'     => $saleOrderId,
+            'saleReferenceId' => $saleReferenceId,
         ];
+
+        $result = $soap->bpReversalRequest($params);
         if ($debugMode) {
-            logTransaction($gatewayModuleName, ['action'=>'verify_request','params'=>$verifyParams], 'Verify Request');
+            logTransaction($moduleName, ['action' => 'reversal_request', 'result' => $result->return ?? null], 'Reverse Attempt');
         }
-        $vr = $soap->bpVerifyRequest($verifyParams);
-        $vcode = $vr->return ?? null;
-
-        if ($vcode === '0' || $vcode === '43') { // 43: قبلاً Verify شده
-            // Settle با retry
-            $settleParams = [
-                'terminalId'      => $gatewayParams['terminalId'],
-                'userName'        => $gatewayParams['userName'],
-                'userPassword'    => $gatewayParams['userPassword'],
-                'orderId'         => (int)$tx->order_id,
-                'saleOrderId'     => (int)$tx->order_id,
-                'saleReferenceId' => $saleReferenceId
-            ];
-            [$settled, $scode] = behpardakht_attemptSettleWithRetry($soap, $settleParams, $debugMode);
-
-            if ($settled) {
-                // به‌روزرسانی رکورد
-                Capsule::table('mod_behpardakht_transactions')
-                    ->where('ref_id', $refId)
-                    ->update([
-                        'status' => 'completed',
-                        'sale_reference_id' => $saleReferenceId,
-                        'card_holder_pan' => $cardHolderPan,
-                        'updated_at' => date('Y-m-d H:i:s')
-                    ]);
-
-                // FinalAmount بانک «ریال» است → تبدیل به واحد سایت
-                $amountInSiteUnit = $finalAmount
-                    ? ($unit === 'toman' ? $finalAmount / 10 : $finalAmount)
-                    : ($unit === 'toman' ? (int)round(((int)$tx->amount_rial) / 10) : (int)$tx->amount_rial);
-
-                // ثبت پرداخت
-                addInvoicePayment(
-                    $invoiceId,
-                    $saleReferenceId,
-                    $amountInSiteUnit,
-                    0,
-                    $gatewayModuleName
-                );
-
-                if ($debugMode) {
-                    logTransaction($gatewayModuleName, [
-                        'action'=>'payment_success',
-                        'RefId'=>$refId,
-                        'SaleReferenceId'=>$saleReferenceId,
-                        'FinalAmountRial'=>$finalAmount,
-                        'RecordedAmount'=>$amountInSiteUnit,
-                        'unit'=>$unit
-                    ], 'Success');
-                }
-
-                header('Location: ' . $gatewayParams['systemurl'] . 'viewinvoice.php?id=' . $invoiceId . '&paymentsuccess=true');
-                exit;
-            } else {
-                // خطای settle
-                behpardakht_handleErrorAndMaybeReverse(
-                    $apiUrl, $gatewayParams, $invoiceId, $saleReferenceId, (int)$tx->order_id, $scode, $debugMode
-                );
-            }
-        } else {
-            // Verify ناموفق
-            behpardakht_handleErrorAndMaybeReverse(
-                $apiUrl, $gatewayParams, $invoiceId, $saleReferenceId, (int)$tx->order_id, $vcode, $debugMode
-            );
-        }
-
     } catch (Exception $e) {
         if ($debugMode) {
-            logTransaction($gatewayModuleName, ['action'=>'callback_exception','error'=>$e->getMessage()], 'Exception');
-        }
-        header('Location: ' . $gatewayParams['systemurl'] . 'viewinvoice.php?id=' . $invoiceId . '&paymentfailed=true&failurereason=' . urlencode('خطای سیستمی'));
-        exit;
-    }
-
-} else {
-    // لغو/خطای کاربر
-    $msg = behpardakht_getErrorMessage($resCode);
-    if ($refId) {
-        Capsule::table('mod_behpardakht_transactions')
-            ->where('ref_id', $refId)
-            ->update([
-                'status' => 'failed',
-                'error_code' => $resCode,
-                'updated_at' => date('Y-m-d H:i:s')
-            ]);
-    }
-    header('Location: ' . $gatewayParams['systemurl'] . 'viewinvoice.php?id=' . $invoiceId . '&paymentfailed=true&failurereason=' . urlencode($msg));
-    exit;
-}
-
-/**
- * Settle با retry و backoff: خروجی [bool $settled, string|null $lastCode]
- */
-function behpardakht_attemptSettleWithRetry(SoapClient $soap, array $settleParams, bool $debugMode, int $maxAttempts = 3): array
-{
-    $gatewayModuleName = 'behpardakht';
-
-    $retryable = ['34','46','61','421','31','32'];
-    $success   = ['0','45']; // 45 = قبلاً settle شده
-
-    $attempt = 0;
-    $lastCode = null;
-
-    while ($attempt < $maxAttempts) {
-        $attempt++;
-        if ($debugMode) {
-            logTransaction($gatewayModuleName, ['action'=>'settle_attempt','attempt'=>$attempt,'params'=>$settleParams], 'Settle Attempt');
-        }
-
-        try {
-            $sr = $soap->bpSettleRequest($settleParams);
-            $code = $sr->return ?? null;
-            $lastCode = $code;
-
-            if (in_array($code, $success, true)) {
-                if ($debugMode) {
-                    logTransaction($gatewayModuleName, ['action'=>'settle_response','attempt'=>$attempt,'code'=>$code], 'Settle OK');
-                }
-                return [true, $code];
-            }
-
-            if (!in_array($code, $retryable, true)) {
-                if ($debugMode) {
-                    logTransaction($gatewayModuleName, ['action'=>'settle_response','attempt'=>$attempt,'code'=>$code], 'Settle Non-Retryable');
-                }
-                return [false, $code];
-            }
-
-            $sleep = 1 << ($attempt - 1); // 1,2,4
-            if ($debugMode) {
-                logTransaction($gatewayModuleName, ['action'=>'settle_retry_wait','seconds'=>$sleep], 'Settle Retry Wait');
-            }
-            sleep($sleep);
-        } catch (Exception $e) {
-            if ($debugMode) {
-                logTransaction($gatewayModuleName, ['action'=>'settle_exception','attempt'=>$attempt,'error'=>$e->getMessage()], 'Settle Exception');
-            }
-            if ($attempt >= $maxAttempts) {
-                return [false, $lastCode];
-            }
-            sleep(1 << ($attempt - 1));
+            logTransaction($moduleName, ['action' => 'reversal_exception', 'error' => $e->getMessage()], 'Reverse Exception');
         }
     }
-    return [false, $lastCode];
-}
-
-/**
- * مدیریت خطا + تلاش برای Reverse (در صورت وجود SaleReferenceId)
- */
-function behpardakht_handleErrorAndMaybeReverse(
-    string $apiUrl,
-    array $gatewayParams,
-    int $invoiceId,
-    string $saleReferenceId,
-    int $orderId,
-    ?string $errCode,
-    bool $debug
-): void {
-    $gatewayModuleName = 'behpardakht';
-    $msg = behpardakht_getErrorMessage((string)$errCode);
-
-    if ($debug) {
-        logTransaction($gatewayModuleName, ['action'=>'payment_error','code'=>$errCode,'msg'=>$msg], 'Payment Error');
-    }
-
-    if ($saleReferenceId) {
-        try {
-            $soap = new SoapClient($apiUrl, [
-                'exceptions' => true,
-                'connection_timeout' => 60,
-                'cache_wsdl' => WSDL_CACHE_NONE,
-                'encoding' => 'UTF-8',
-                'stream_context' => stream_context_create([
-                    'ssl' => [
-                        'verify_peer'       => true,
-                        'verify_peer_name'  => true,
-                        'allow_self_signed' => false,
-                        // 'cafile' => '/etc/ssl/certs/ca-certificates.crt',
-                    ]
-                ])
-            ]);
-            $revParams = [
-                'terminalId'      => $gatewayParams['terminalId'],
-                'userName'        => $gatewayParams['userName'],
-                'userPassword'    => $gatewayParams['userPassword'],
-                'orderId'         => $orderId,
-                'saleOrderId'     => $orderId,
-                'saleReferenceId' => $saleReferenceId
-            ];
-            $rr = $soap->bpReversalRequest($revParams);
-            if ($debug) {
-                logTransaction($gatewayModuleName, ['action'=>'reverse_request','result'=>$rr->return ?? null], 'Reverse Request');
-            }
-        } catch (Exception $e) {
-            if ($debug) {
-                logTransaction($gatewayModuleName, ['action'=>'reverse_exception','error'=>$e->getMessage()], 'Reverse Exception');
-            }
-        }
-    }
-
-    header('Location: ' . $gatewayParams['systemurl'] . 'viewinvoice.php?id=' . $invoiceId . '&paymentfailed=true&failurereason=' . urlencode($msg));
-    exit;
 }

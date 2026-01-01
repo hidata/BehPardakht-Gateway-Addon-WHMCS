@@ -51,6 +51,6 @@ if (!function_exists('behpardakht_getErrorMessage')) {
             '419' => 'تعداد دفعات ورود اطلاعات از حد مجاز گذشته است',
             '421' => 'IP نامعتبر است',
         ];
-        return $errors[$errorCode] ?? 'خطای نامشخص';
+        return $errors[$errorCode] ?? 'خطای نامشخص از درگاه (کد: ' . $errorCode . ')';
     }
 }

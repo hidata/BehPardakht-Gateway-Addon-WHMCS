@@ -50,10 +50,11 @@ if (!$invoice) {
 }
 
 // پارامترهای گیت‌وی
-$testMode     = !empty($gatewayParams['testMode']) && $gatewayParams['testMode'] === 'on';
 $terminalId   = $gatewayParams['terminalId'];
 $userName     = $gatewayParams['userName'];
 $userPassword = $gatewayParams['userPassword'];
+$callbackOverride = trim((string)($gatewayParams['callbackUrlOverride'] ?? ''));
+$paymentLanguage = strtolower((string)($gatewayParams['paymentLanguage'] ?? 'fa'));
 
 // واحد مبلغ سایت از تنظیمات درگاه: 'toman' یا 'rial'
 $unit = strtolower((string)($gatewayParams['unit'] ?? 'toman'));
@@ -61,12 +62,12 @@ if (!in_array($unit, ['toman','rial'], true)) {
     $unit = 'toman';
 }
 
-$callBackUrl = $systemUrl . 'modules/gateways/callback/behpardakht.php';
-$apiUrl = $testMode
-    ? 'https://sandbox.banktest.ir/mellat/bpm.shaparak.ir/pgwchannel/services/pgw?wsdl'
-    : 'https://bpm.shaparak.ir/pgwchannel/services/pgw?wsdl';
-$paymentUrl = $testMode
-    ? 'https://sandbox.banktest.ir/mellat/bpm.shaparak.ir/pgwchannel/startpay.mellat'
+$callBackUrl = $callbackOverride !== ''
+    ? $callbackOverride
+    : $systemUrl . 'modules/gateways/callback/behpardakht.php';
+$apiUrl = 'https://bpm.shaparak.ir/pgwchannel/services/pgw?wsdl';
+$paymentUrl = $paymentLanguage === 'en'
+    ? 'https://bpm.shaparak.ir/pgwchannel/enstartpay.mellat'
     : 'https://bpm.shaparak.ir/pgwchannel/startpay.mellat';
 
 // تبدیل مبلغ به «ریال» برای بانک
@@ -112,19 +113,18 @@ try {
     }
 
     $result = $soapClient->bpPayRequest($parameters);
-    $response = explode(',', $result->return ?? '');
-    $code = $response[0] ?? null;
+    $resultString = trim((string)($result->return ?? ''));
+    [$code, $refId] = array_map('trim', explode(',', $resultString, 2) + ['', '']);
 
-    if ($code === '0' && !empty($response[1])) {
-        $refId = $response[1];
-
+    if ($code === '0' && $refId !== '') {
         Capsule::table('mod_behpardakht_transactions')->insert([
             'invoice_id'  => $invoiceId,
             'order_id'    => $orderId,
             'ref_id'      => $refId,
             'amount_rial' => $amountRial,
             'status'      => 'pending',
-            'created_at'  => date('Y-m-d H:i:s')
+            'created_at'  => date('Y-m-d H:i:s'),
+            'updated_at'  => date('Y-m-d H:i:s'),
         ]);
 
         echo '<!DOCTYPE html>
@@ -141,7 +141,11 @@ try {
     } else {
         $msg = behpardakht_getErrorMessage($code ?? 'unknown');
         if ($debugMode) {
-            logTransaction($gatewayModuleName, ['action'=>'payment_request_failed','response'=>$result->return ?? null,'message'=>$msg], 'Request Failed');
+            logTransaction($gatewayModuleName, [
+                'action'=>'payment_request_failed',
+                'response'=>$resultString,
+                'message'=>$msg
+            ], 'Request Failed');
         }
         header('Location: ' . $systemUrl . 'viewinvoice.php?id=' . $invoiceId . '&paymentfailed=true&failurereason=' . urlencode($msg));
         exit;
