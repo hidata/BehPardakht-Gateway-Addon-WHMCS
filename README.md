@@ -68,6 +68,5 @@
 ## نکات و توصیه‌ها
 
 - برای جلوگیری از هشدارهای TLS در SOAP، از گواهی معتبر روی سرور استفاده کنید یا مسیر CA را در گزینهٔ `stream_context` تنظیم کنید.【F:modules/gateways/behpardakht/payment.php†L91-L113】  
-- در حالت تست، درخواست‌ها به آدرس sandbox بانک ارسال می‌شود و پرداخت واقعی انجام نمی‌شود.【F:modules/gateways/behpardakht/payment.php†L70-L79】  
+- درخواست‌ها به آدرس‌های رسمی شاپرک ارسال می‌شوند و از محیط‌های آزمایشی استفاده نمی‌شود.【F:modules/gateways/behpardakht/payment.php†L66-L80】  
 - در صورت نیاز به مسدودسازی دسترسی کاربرانی خارج از ایران، می‌توانید فایل `forbidden.php` را در وب‌سرور یا فایروال به عنوان صفحهٔ پیش‌فرض استفاده کنید.【F:modules/gateways/behpardakht/forbidden.php†L1-L15】
-
