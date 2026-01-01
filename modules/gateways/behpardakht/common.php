@@ -54,3 +54,114 @@ if (!function_exists('behpardakht_getErrorMessage')) {
         return $errors[$errorCode] ?? 'خطای نامشخص از درگاه (کد: ' . $errorCode . ')';
     }
 }
+
+if (!function_exists('behpardakht_shouldUseTestEnv')) {
+    function behpardakht_shouldUseTestEnv(array $gatewayParams): bool
+    {
+        $environment = strtolower((string)($gatewayParams['environment'] ?? ''));
+        if ($environment === 'test') {
+            return true;
+        }
+        if ($environment === 'production') {
+            return false;
+        }
+
+        return !empty($gatewayParams['testMode']) && $gatewayParams['testMode'] === 'on';
+    }
+}
+
+if (!function_exists('behpardakht_getEndpoints')) {
+    function behpardakht_getEndpoints(array $gatewayParams): array
+    {
+        $useTest = behpardakht_shouldUseTestEnv($gatewayParams);
+
+        return [
+            'wsdl' => $useTest
+                ? 'https://pgw.dev.bpmellat.ir/pgwchannel/services/pgw?wsdl'
+                : 'https://bpm.shaparak.ir/pgwchannel/services/pgw?wsdl',
+            'startpay_fa' => $useTest
+                ? 'https://pgw.dev.bpmellat.ir/pgwchannel/startpay.mellat'
+                : 'https://bpm.shaparak.ir/pgwchannel/startpay.mellat',
+            'startpay_en' => $useTest
+                ? 'https://pgw.dev.bpmellat.ir/pgwchannel/enstartpay.mellat'
+                : 'https://bpm.shaparak.ir/pgwchannel/enstartpay.mellat',
+        ];
+    }
+}
+
+if (!function_exists('behpardakht_getCustomFieldValue')) {
+    function behpardakht_getCustomFieldValue(int $clientId, int $fieldId): ?string
+    {
+        if ($clientId <= 0 || $fieldId <= 0) {
+            return null;
+        }
+
+        $value = \WHMCS\Database\Capsule::table('tblcustomfieldsvalues')
+            ->where('fieldid', $fieldId)
+            ->where('relid', $clientId)
+            ->value('value');
+
+        return is_string($value) ? $value : null;
+    }
+}
+
+if (!function_exists('behpardakht_normalizeNationalCode')) {
+    function behpardakht_normalizeNationalCode(?string $value): ?string
+    {
+        $digits = preg_replace('/\D+/', '', (string)$value);
+        if ($digits === '' || strlen($digits) !== 10) {
+            return null;
+        }
+
+        return $digits;
+    }
+}
+
+if (!function_exists('behpardakht_normalizeIranMobile')) {
+    function behpardakht_normalizeIranMobile(?string $value): ?string
+    {
+        $digits = preg_replace('/\D+/', '', (string)$value);
+        if ($digits === '') {
+            return null;
+        }
+
+        if (str_starts_with($digits, '98') && strlen($digits) === 12) {
+            return $digits;
+        }
+
+        if (str_starts_with($digits, '09') && strlen($digits) === 11) {
+            return '98' . substr($digits, 1);
+        }
+
+        if (strlen($digits) === 10 && str_starts_with($digits, '9')) {
+            return '98' . $digits;
+        }
+
+        return null;
+    }
+}
+
+if (!function_exists('behpardakht_encryptNationalCode')) {
+    function behpardakht_encryptNationalCode(string $nationalCode, string $hexKey = '2C7D202B960A96AA'): string
+    {
+        $nationalCode = trim($nationalCode);
+        $keyBin = hex2bin($hexKey);
+
+        if ($keyBin === false || strlen($keyBin) !== 8) {
+            throw new \RuntimeException('کلید ENC نامعتبر است (باید 16 کاراکتر هگز، 8 بایت باشد).');
+        }
+
+        $ciphertext = openssl_encrypt(
+            $nationalCode,
+            'DES-ECB',
+            $keyBin,
+            OPENSSL_RAW_DATA
+        );
+
+        if ($ciphertext === false) {
+            throw new \RuntimeException('رمزنگاری ENC با DES در این سرور در دسترس نیست یا با خطا مواجه شد.');
+        }
+
+        return strtoupper(bin2hex($ciphertext));
+    }
+}

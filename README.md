@@ -9,6 +9,8 @@
 - کنترل اعتبار با HMAC برای جلوگیری از دست‌کاری مبلغ و شناسه فاکتور.【F:modules/gateways/behpardakht.php†L92-L118】【F:modules/gateways/behpardakht/payment.php†L23-L55】  
 - ثبت تراکنش‌ها در جدول `mod_behpardakht_transactions` (Invoice, OrderId, RefId, مبلغ ریال، وضعیت و …).【F:modules/gateways/behpardakht.php†L55-L91】  
 - پشتیبانی از دو واحد مبلغ سایت (تومان/ریال) و تبدیل خودکار به ریال برای بانک.【F:modules/gateways/behpardakht/payment.php†L43-L76】  
+- انتخاب محیط Production/Test برای WSDL و مسیر StartPay بر اساس مستندات جدید.【F:modules/gateways/behpardakht/common.php†L19-L52】【F:modules/gateways/behpardakht/payment.php†L66-L77】  
+- محدودسازی پرداخت با کد ملی در حالت‌های payrequest-enc، redirect-ENC و mana-mobile+enc (رمزنگاری DES/ECB).【F:modules/gateways/behpardakht/common.php†L83-L145】【F:modules/gateways/behpardakht/payment.php†L79-L154】  
 - حالت تست (Sandbox) و لاگ دیباگ از تراکنش‌ها در WHMCS.【F:modules/gateways/behpardakht/payment.php†L33-L42】【F:modules/gateways/callback/behpardakht.php†L27-L44】  
 - پردازش ریفاند از داخل WHMCS با استفاده از `bpRefundRequest`.【F:modules/gateways/behpardakht.php†L119-L182】  
 - افزونهٔ مدیریتی برای مرور، فیلتر، مرتب‌سازی، صفحه‌بندی و خروجی اکسل از تراکنش‌ها در محیط ادمین WHMCS.【F:modules/addons/behpardakht_transactions/behpardakht_transactions.php†L57-L220】
@@ -28,7 +30,9 @@
 2. در WHMCS به **System Settings → Payment Gateways** بروید و درگاه «به‌پرداخت ملت» را فعال کنید.
 3. مقادیر زیر را تنظیم کنید:
    - **Terminal ID**، **نام کاربری** و **رمز عبور** دریافتی از بانک.
+   - **محیط سرویس** (Production یا Test) برای انتخاب WSDL و StartPay مناسب. در صورت استفاده از گزینه قدیمی «حالت تست»، همان رفتار استفاده می‌شود.【F:modules/gateways/behpardakht/common.php†L19-L52】【F:modules/gateways/behpardakht.php†L23-L145】
    - **واحد مبلغ سایت** (تومان/ریال) تا تبدیل مبلغ در `payment.php` درست انجام شود.【F:modules/gateways/behpardakht/payment.php†L43-L76】
+   - در صورت نیاز به کنترل کد ملی: **حالت محدودسازی کد ملی** (none/payrequest-enc/redirect-ENC/mana-mobile+enc)، **شناسه فیلد کد ملی** (Custom Field)، **کلید ENC** (هگز ۱۶ کاراکتری، پیش‌فرض بانک) و در حالت مانا، **شناسه فیلد موبایل** یا شماره موبایل پروفایل کاربر.【F:modules/gateways/behpardakht.php†L87-L145】【F:modules/gateways/behpardakht/payment.php†L79-L154】
    - در صورت نیاز، **حالت تست** و **حالت دیباگ** را فعال کنید (در حالت دیباگ لاگ تراکنش‌ها در WHMCS ثبت می‌شود).
 4. آدرس بازگشت را در پنل بانک به شکل زیر تنظیم کنید (systemurl را با دامنهٔ خود جایگزین کنید):  
    ```
@@ -68,5 +72,15 @@
 ## نکات و توصیه‌ها
 
 - برای جلوگیری از هشدارهای TLS در SOAP، از گواهی معتبر روی سرور استفاده کنید یا مسیر CA را در گزینهٔ `stream_context` تنظیم کنید.【F:modules/gateways/behpardakht/payment.php†L91-L113】  
-- درخواست‌ها به آدرس‌های رسمی شاپرک ارسال می‌شوند و از محیط‌های آزمایشی استفاده نمی‌شود.【F:modules/gateways/behpardakht/payment.php†L66-L80】  
+- درخواست‌ها بر اساس تنظیم «محیط سرویس» به آدرس‌های رسمی یا dev شاپرک ارسال می‌شوند.【F:modules/gateways/behpardakht/common.php†L19-L52】  
 - در صورت نیاز به مسدودسازی دسترسی کاربرانی خارج از ایران، می‌توانید فایل `forbidden.php` را در وب‌سرور یا فایروال به عنوان صفحهٔ پیش‌فرض استفاده کنید.【F:modules/gateways/behpardakht/forbidden.php†L1-L15】
+
+### محدودسازی کد ملی (ENC/enc)
+
+- برای کد ملی مشتری یک Custom Field تعریف کنید (۱۰ رقم) و شناسه آن را در تنظیمات درگاه وارد کنید.  
+- از گزینهٔ **محدودسازی کد ملی** یکی از حالت‌ها را انتخاب کنید:
+  - `payrequest-enc`: ارسال پارامتر `enc` در bpPayRequest.  
+  - `redirect-ENC`: ارسال فیلد `ENC` همراه فرم Redirect (Strong Auth).  
+  - `mana-mobile+enc`: ارسال `MobileNo` (فرمت 98xxxxxxxxxx) و `enc` در Redirect.  
+- کلید رمزنگاری پیش‌فرض `2C7D202B960A96AA` مطابق نمونه مستندات است؛ در صورت ارائه کلید اختصاصی، آن را جایگزین کنید.  
+【F:modules/gateways/behpardakht/common.php†L83-L145】【F:modules/gateways/behpardakht/payment.php†L79-L154】

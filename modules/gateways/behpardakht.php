@@ -35,6 +35,22 @@ function behpardakht_MetaData(): array
  */
 function behpardakht_config(): array
 {
+    // لیست فیلدهای سفارشی مشتری برای انتخاب در تنظیمات درگاه
+    $customFieldOptions = ['0' => '--- انتخاب نشده ---'];
+    try {
+        $fields = Capsule::table('tblcustomfields')
+            ->where('type', 'client')
+            ->orderBy('sortorder')
+            ->orderBy('id')
+            ->get(['id', 'fieldname']);
+
+        foreach ($fields as $field) {
+            $customFieldOptions[(string)$field->id] = '[' . $field->id . '] ' . $field->fieldname;
+        }
+    } catch (\Throwable $e) {
+        // در صورت خطا از گزینه پیش‌فرض استفاده می‌شود
+    }
+
     return [
         'FriendlyName' => [
             'Type'  => 'System',
@@ -55,6 +71,16 @@ function behpardakht_config(): array
             'Type' => 'password', 'Size' => '25', 'Default' => '',
             'Description' => 'رمز عبور دریافتی از بانک',
         ],
+        'environment' => [
+            'FriendlyName' => 'محیط سرویس',
+            'Type' => 'dropdown',
+            'Options' => [
+                'production' => 'Production (bpm.shaparak.ir)',
+                'test' => 'Test / Dev (pgw.dev.bpmellat.ir)',
+            ],
+            'Default' => 'production',
+            'Description' => 'برای استفاده از WSDL و StartPay تست، گزینه Test را انتخاب کنید.',
+        ],
         'callbackUrlOverride' => [
             'FriendlyName' => 'آدرس بازگشت (Callback)',
             'Type' => 'text', 'Size' => '255', 'Default' => '',
@@ -73,7 +99,7 @@ function behpardakht_config(): array
         'testMode' => [
             'FriendlyName' => 'حالت تست',
             'Type' => 'yesno',
-            'Description' => 'برای استفاده از محیط تست فعال کنید',
+            'Description' => 'برای استفاده از محیط تست فعال کنید (در صورت عدم استفاده از گزینه محیط سرویس).',
         ],
         'debugMode' => [
             'FriendlyName' => 'حالت دیباگ',
@@ -81,15 +107,53 @@ function behpardakht_config(): array
             'Description' => 'برای ثبت لاگ تراکنش‌ها فعال کنید',
         ],
         'unit' => [
-    'FriendlyName' => 'واحد مبلغ سایت',
-    'Type'        => 'dropdown',
-    'Options'     => [
-        'toman' => 'تومان',
-        'rial'  => 'ریال',
-    ],
-    'Default'     => 'toman',
-    'Description' => 'مشخص کنید مبلغ‌های سایت بر مبنای تومان است یا ریال. (درگاه همیشه با «ریال» کار می‌کند.)',
-],
+            'FriendlyName' => 'واحد مبلغ سایت',
+            'Type'        => 'dropdown',
+            'Options'     => [
+                'toman' => 'تومان',
+                'rial'  => 'ریال',
+            ],
+            'Default'     => 'toman',
+            'Description' => 'مشخص کنید مبلغ‌های سایت بر مبنای تومان است یا ریال. (درگاه همیشه با «ریال» کار می‌کند.)',
+        ],
+        'nationalCodeMode' => [
+            'FriendlyName' => 'محدودسازی کد ملی',
+            'Type' => 'dropdown',
+            'Options' => [
+                'none' => 'غیرفعال',
+                'payrequest-enc' => 'ارسال enc در PayRequest',
+                'redirect-ENC' => 'ارسال ENC در Redirect (Strong Auth)',
+                'mana-mobile+enc' => 'MobileNo + enc (مانا)',
+            ],
+            'Default' => 'none',
+            'Description' => 'برای استفاده از ویژگی ENC/enc در مستندات جدید، یکی از حالت‌های بالا را انتخاب کنید.',
+        ],
+        'nationalCodeFieldId' => [
+            'FriendlyName' => 'شناسه فیلد کد ملی (Custom Field)',
+            'Type' => 'dropdown',
+            'Options' => $customFieldOptions,
+            'Default' => '0',
+            'Description' => 'یکی از فیلدهای سفارشی مشتری (۱۰ رقمی) را برای دریافت کد ملی انتخاب کنید.',
+        ],
+        'nationalCodeKey' => [
+            'FriendlyName' => 'کلید ENC (هگز 16 کاراکتری)',
+            'Type' => 'text',
+            'Size' => '20',
+            'Default' => '2C7D202B960A96AA',
+            'Description' => 'کلید رمزنگاری DES/ECB برای ENC. مقدار پیش‌فرض مطابق مستندات بانک است.',
+        ],
+        'nationalCodeRequire' => [
+            'FriendlyName' => 'الزام کد ملی',
+            'Type' => 'yesno',
+            'Description' => 'در حالت‌های ENC اگر فعال باشد، بدون کد ملی پرداخت شروع نمی‌شود.',
+        ],
+        'mobileFieldId' => [
+            'FriendlyName' => 'شناسه فیلد موبایل (Custom Field)',
+            'Type' => 'dropdown',
+            'Options' => $customFieldOptions,
+            'Default' => '0',
+            'Description' => 'برای حالت mana-mobile+enc، فیلد سفارشی موبایل (یا تلفن پروفایل) را انتخاب کنید.',
+        ],
     ];
 }
 
@@ -237,7 +301,8 @@ function behpardakht_refund(array $params): array
         return ['status' => 'error', 'rawdata' => 'Refund is only allowed for settled transactions with reference id'];
     }
 
-    $apiUrl = 'https://bpm.shaparak.ir/pgwchannel/services/pgw?wsdl';
+    $endpoints = behpardakht_getEndpoints($params);
+    $apiUrl = $endpoints['wsdl'];
 
     $refundOrderId = (int) substr((string)time() . str_pad((string)mt_rand(0, 999), 3, '0', STR_PAD_LEFT), 0, 18);
     try {
